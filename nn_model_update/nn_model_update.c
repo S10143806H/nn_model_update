@@ -192,15 +192,13 @@ int main(int argc, char* argv[]) {
 	printf("path_model       = %s\n", path_model);
 	printf("path_txtfile     = %s\n", path_txtfile);
 
-	resetTXT(path_txtfile);
-	printf("[%s][INFO] resetTXT done\n", __func__);
+	
+	resetJSON(path_model);		//resetTXT(path_txtfile);
+	printf("[%s][INFO] resetJSON done\n", __func__);
 	path_build_options_json = pathTempJSON(path_build, ext_json, key_json);
-	printf("[%s][INFO] path_build_options_json = %s\n", __func__, path_build_options_json);
 	path_example = validateINO(path_build);
 	printf("[%s][INFO] path_example            = %s\n", __func__, path_example);
-
-	writeTXT(path_example);
-
+	writeJSON(path_example);	//writeTXT(path_example);
 	return 0;
 }
 
@@ -973,6 +971,350 @@ void writeTXT(const char* path) {
 	updateTXT("--------------------------------------");
 
 	// qqz return 0;
+
+error_combination:
+	error_handler("Model combination mismatch. Please check modelSelect() again.");
+
+error_customized_missing:
+	error_handler("Model missing. Please check your sketch folder again.");
+
+error_customized_mismatch:
+	error_handler("Customized model mismatch. Please check your sketch folder again.");
+}
+
+void resetJSON(const char* input) {
+	DIR* dir;
+	struct dirent* entry;
+
+	dir = opendir(input);
+	if (dir == NULL) {
+		perror("Error opening directory");
+		return;
+	}
+
+	while ((entry = readdir(dir)) != NULL) {
+		if (strstr(entry->d_name, ".json") != NULL) {
+			char filepath[256];
+			snprintf(filepath, sizeof(filepath), "%s/%s", input, entry->d_name);
+
+			FILE* file = fopen(filepath, "r");
+			if (file == NULL) {
+				perror("Error opening file");
+				continue;
+			}
+
+			fseek(file, 0, SEEK_END);
+			long file_size = ftell(file);
+			fseek(file, 0, SEEK_SET);
+
+			char* file_contents = (char*)malloc(file_size + 1);
+			fread(file_contents, file_size, 1, file);
+			fclose(file);
+
+			cJSON* root = cJSON_Parse(file_contents);
+			if (root == NULL) {
+				fprintf(stderr, "Error parsing JSON in file: %s\n", entry->d_name);
+				free(file_contents);
+				continue;
+			}
+
+			cJSON* fwfs = cJSON_GetObjectItemCaseSensitive(root, "FWFS");
+			if (fwfs == NULL || !cJSON_IsObject(fwfs)) {
+				cJSON_Delete(root);
+				free(file_contents);
+				fprintf(stderr, "Invalid JSON format in file: %s\n", entry->d_name);
+				continue;
+			}
+
+			cJSON* files = cJSON_GetObjectItemCaseSensitive(fwfs, "files");
+			if (files == NULL || !cJSON_IsArray(files)) {
+				cJSON_Delete(root);
+				free(file_contents);
+				fprintf(stderr, "Invalid JSON format in file: %s\n", entry->d_name);
+				continue;
+			}
+
+			cJSON_DeleteItemFromObject(fwfs, "files");
+
+			cJSON* new_files = cJSON_CreateArray();
+			cJSON_AddItemToObject(fwfs, "files", new_files);
+
+			char* new_file_contents = cJSON_Print(root);
+			cJSON_Delete(root);
+			free(file_contents);
+
+			FILE* new_file = fopen(filepath, "w");
+			if (new_file == NULL) {
+				perror("Error opening file for writing");
+				free(new_file_contents);
+				continue;
+			}
+
+			fwrite(new_file_contents, strlen(new_file_contents), 1, new_file);
+			fclose(new_file);
+			free(new_file_contents);
+
+			printf("[INFO] %s has been reset\n", entry->d_name);
+		}
+	}
+
+	closedir(dir);
+}
+
+void writeJSON(const char* f_path) {
+	DIR* dir;
+	struct dirent* ent;
+	const char buf[MAX_PATH_LENGTH] = "";
+	const char backslash[] = "\\";
+	char line[MAX_PATH_LENGTH] = { 0 };
+	unsigned int line_count = 0;
+	char voe_status[100] = "NA";
+	char model_type[100] = "";
+	char model_name_od[100] = "";
+	char model_name_fd[100] = "";
+	char model_name_fr[100] = "";
+	char header_od[100] = "NA";
+	char header_fd[100] = "NA";
+	char header_fr[100] = "NA";
+	char header_all[100] = "";
+	char line_strip_header[100] = "NA";
+	char line_strip_headerNN[100] = "NA";
+	char dir_example[100] = "NA";
+
+	f_path = path_example;
+
+#if PRINT_DEBUG
+	printf("[%s][INFO] Load example: \"%s\"\n", __func__, f_path);
+#endif
+
+	updateTXT("----------------------------------");
+	updateTXT("Current ino contains model(s):");
+
+	// check path format: IDE1 file path, IDE2 dir path
+	if (strstr(f_path, ".ino") == NULL) {
+		printf("IDE2\n");
+		//														update path 
+		DIR* dir;
+		struct dirent* ent;
+
+		// check weather dir is valid
+		if ((dir = opendir(f_path)) != NULL) {
+			/* print all the files and directories within directory */
+			while ((ent = readdir(dir)) != NULL) {
+				if (ent->d_type == DT_REG && strstr(ent->d_name, ".ino") != NULL) {
+#if PRINT_DEBUG
+					printf("[%s] File:%s\n", __func__, ent->d_name);
+#endif
+					//if (strstr(ent->d_name, ".ino") != NULL) {
+					strcat(f_path, backspace);
+					strcat(f_path, ent->d_name);
+					printf("[%s] path:%s\n", __func__, f_path);
+					//}
+					//else {
+					//	printf("cannot find file ends with .ino \n");
+					//}
+				}
+			}
+		}
+		else {
+			/* opendir() failed for some other reason. */
+			printf("[%s][Error] Faield to open temp dir in IDE2.0 :%s\n", __func__, f_path);
+			// qqz return EXIT_FAILURE;
+		}
+	}
+
+
+	FILE* f_model = fopen(f_path, "r");  //FILE* f_model = fopen(path, "r, ccs=UTF-8");
+	char param[100];
+	if (f_model) {
+		char line[1024];
+		while (fgets(line, sizeof(line), f_model)) {
+			/* check whether keywordNN in f_model content */
+			if (strstr(line, key_amb_NN) != NULL && strstr(line, "//") == NULL && strstr(line, key_amb_bypassNN1) == NULL && strstr(line, key_amb_bypassNN2) == NULL) {
+				extractParam(line, param);
+				printf("Extracted parameter: %s\n", param);
+				char* token;
+				token = strtok(param, ", ");
+				if (token != NULL) {
+					strcpy(model_type, token);
+					printf("Model Type: %s\n", model_type);
+					/* ------------------ object detection ------------------*/
+					token = strtok(NULL, ", ");
+					printf("1 token: %s\n", token);
+					if (token != NULL) {
+						// check model combination rules
+						if (strcmp(model_type, "OBJECT_DETECTION") == 0) {
+							if (strcmp(token, "NA_MODEL") == 0 || strstr(token, "YOLO") == NULL) {
+								goto error_combination;
+							}
+							// check customized od model
+							if (strstr(token, key_amb_customized) != NULL) {
+#if PRINT_DEBUG
+								printf("od key_amb_customized\n");
+								printf("customized od: %s\n", input2model(token));
+#endif
+								extractRootDirectory(path_example, dir_example);
+#if PRINT_DEBUG
+								printf("customized dir: %s\n", dir_example);
+#endif
+								DIR* dir;
+								struct dirent* ent;
+								int count = 0;
+
+								// check weather dir is valid
+								if ((dir = opendir(dir_example)) != NULL) {
+									/* print all the files and directories within directory */
+									while ((ent = readdir(dir)) != NULL) {
+										if (ent->d_type == DT_REG) {
+											count++;
+										}
+										if (strstr(ent->d_name, ".nb") != NULL) {
+											if (strstr(ent->d_name, "yolo") != NULL) {
+#if PRINT_DEBUG
+												printf("%s\n", ent->d_name);
+#endif
+											}
+											else {
+												goto error_customized_mismatch;
+											}
+										}
+									}
+								}
+								if (count <= 1) {
+									goto error_customized_missing;
+								}
+							}
+						}
+						strcpy(model_name_od, token);
+						/* ----------------- face detection -----------------*/
+						token = strtok(NULL, ", ");
+						printf("2 token: %s\n", token);
+						if (token != NULL) {
+							// check model combination rules
+							if (strcmp(model_type, "FACE_DETECTION") == 0) {
+								if (strcmp(token, "NA_MODEL") == 0 || strstr(token, "SCRFD") == NULL) {
+									goto error_combination;
+								}
+								// check customized fd model
+								if (strstr(token, key_amb_customized) != NULL) {
+									printf("fd key_amb_customized\n");
+									printf("customized fd: %s\n", input2model(token));
+									extractRootDirectory(path_example, dir_example);
+									printf("customized dir: %s\n", dir_example);
+
+									DIR* dir;
+									struct dirent* ent;
+									int count = 0;
+
+									// check weather dir is valid
+									if ((dir = opendir(dir_example)) != NULL) {
+										/* print all the files and directories within directory */
+										while ((ent = readdir(dir)) != NULL) {
+											if (ent->d_type == DT_REG) {
+												count++;
+											}
+											if (strstr(ent->d_name, ".nb") != NULL) {
+												if (strstr(ent->d_name, "scrfd") != NULL) {
+#if PRINT_DEBUG
+													printf("%s\n", ent->d_name);
+#endif
+												}
+												else {
+													goto error_customized_mismatch;
+												}
+											}
+										}
+									}
+									if (count <= 1) {
+										goto error_customized_missing;
+									}
+								}
+							}
+							strcpy(model_name_fd, token);
+							/*-------------- face recognition --------------*/
+							token = strtok(NULL, ", ");
+							printf("3 token: %s\n", token);
+							// check model combination rules
+							if (strcmp(model_type, "FACE_RECOGNITION") == 0) {
+								if (strcmp(model_name_fd, "NA_MODEL") == 0 || strstr(model_name_fd, "SCRFD") == NULL || strcmp(token, "NA_MODEL") == 0 || strstr(token, "MOBILEFACENET") == NULL) {
+									goto error_combination;
+								}
+								// check customized fr model
+								if (strstr(token, key_amb_customized) != NULL) {
+									printf("fr key_amb_customized\n");
+									printf("customized fr: %s\n", input2model(token));
+									extractRootDirectory(path_example, dir_example);
+									printf("customized dir: %s\n", dir_example);
+
+									DIR* dir;
+									struct dirent* ent;
+									int count = 0;
+
+									// check weather dir is valid
+									if ((dir = opendir(dir_example)) != NULL) {
+										/* print all the files and directories within directory */
+										while ((ent = readdir(dir)) != NULL) {
+											if (ent->d_type == DT_REG) {
+												count++;
+											}
+											if (strstr(ent->d_name, ".nb") != NULL) {
+												if (strstr(ent->d_name, "mobilefacenet") != NULL) {
+#if PRINT_DEBUG
+													printf("%s\n", ent->d_name);
+#endif
+												}
+												else {
+													goto error_customized_mismatch;
+												}
+											}
+										}
+									}
+									if (count <= 1) {
+										goto error_customized_missing;
+									}
+								}
+							}
+							if (token != NULL) {
+								strcpy(model_name_fr, token);
+							}
+						}
+					}
+
+					/* default settings for all models */
+					else {
+						/* provide default settings for all models if user never provide any selections*/
+						if (strcmp(model_type, "OBJECT_DETECTION") == 0 && strcmp(input2model(model_name_od), "NA") == 0) {
+							printf("111\n");
+							strcpy(model_name_od, "DEFAULT_YOLOV4TINY");
+							strcpy(model_name_fd, "NA_MODEL");
+							strcpy(model_name_fr, "NA_MODEL");
+						}
+						if (strcmp(model_type, "FACE_DETECTION") == 0 && strcmp(input2model(model_name_od), "NA") == 0) {
+							printf("222\n");
+							strcpy(model_name_od, "NA_MODEL");
+							strcpy(model_name_fd, "DEFAULT_SCRFD");
+							strcpy(model_name_fr, "NA_MODEL");
+						}
+						if (strcmp(model_type, "FACE_RECOGNITION") == 0 && strcmp(input2model(model_name_od), "NA") == 0) {
+							printf("333\n");
+							strcpy(model_name_od, "NA_MODEL");
+							strcpy(model_name_fd, "DEFAULT_SCRFD");
+							strcpy(model_name_fr, "DEFAULT_MOBILEFACENET");
+						}
+					}
+				}
+				fclose(f_model);
+				printf("-------------------------------------\n");
+				printf("Model Name OD: %s\n", input2model(model_name_od));
+				printf("Model Name FD: %s\n", input2model(model_name_fd));
+				printf("Model Name FR: %s\n", input2model(model_name_fr));
+				printf("-------------------------------------\n");
+				updateTXT(input2model(model_name_od));
+				updateTXT(input2model(model_name_fd));
+				updateTXT(input2model(model_name_fr));
+			}
+		}
+	}
 
 error_combination:
 	error_handler("Model combination mismatch. Please check modelSelect() again.");
