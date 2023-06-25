@@ -1,4 +1,4 @@
-/*
+﻿/*
 LINUX:
 gcc -c cJSON.c
 ar rcs libcjson.a cJSON.o
@@ -43,7 +43,7 @@ Jul
 #include "cJSON.h"
 #include <locale.h>
 
-#define PRINT_DEBUG 1
+#define PRINT_DEBUG		0
 #define MAX_PATH_LENGTH 1024
 
 /* Declear function headers */
@@ -54,8 +54,6 @@ const char* dirName(const char* directory_path);
 int isDirExists(const char* path);
 /* Functions below are for txt f_model manipulation */
 int endsWith(const char* str, const char* suffix);
-/* Function checks whether the directory exisits */
-void writeTXT(const char* path_example);
 /* Returns example f_model path inside the temp JSON f_model */
 const char* pathTempJSON(const char* directory_path, const char* ext, const char* key);
 /* Load JSON f_model from the directory and parse into cJSON data format */
@@ -78,15 +76,18 @@ void error_handler(const char* message);
 const char* input2model(const char* input);
 /* Find the dir name of input source file path*/
 void extractRootDirectory(char* source, char* result);
+/* Convert model input to model filename as defined in json */
+const char* input2filename(const char* directory_path, const char* key);
+
 // -------------------------------------------------------------
-/* Conveert model input type to model filename*/
-const char* input2filename(const char* input);
-/* Conveert model input type to model header f_model*/
+
+/* Convert model input type to model header f_model*/
 const char* input2header(const char* input);
 
 void validateJSON(void);
 void resetJSON(const char* input);
 void updateJSON(const char* input);
+/* Function to update JSON */
 void writeJSON(const char* f_path);
 bool dupCheckJSON(const char* input);
 void dspFileProp(const char* f_name);
@@ -94,23 +95,24 @@ void renameFile(const char* f_name, int f_type);
 void bkuModel(const char* input, const char* f_path);
 void rvtModel(const char* input);
 
+
 /* Declear global vairables */
-const char* key_amb_NN = "modelSelect";
-const char* key_amb_bypassNN1 = " .modelSelect";
-const char* key_amb_bypassNN2 = " modelSelect";
-const char* key_amb_VOE = "configVideoChannel";
-const char* key_amb_bypassVOE1 = " .configVideoChannel";
-const char* key_amb_bypassVOE2 = " configVideoChannel";
-const char* key_amb_header = "#include";
-const char* key_amb_customized = "CUSTOMIZED";
-const char* key_json = "build";
-const char* key_amb = "Arduino15";
-const char* key_ino = ".ino";
-const char* ext_json = ".json";
+const char* key_amb_NN					= "modelSelect";
+const char* key_amb_bypassNN1			= " .modelSelect";
+const char* key_amb_bypassNN2			= " modelSelect";
+const char* key_amb_VOE					= "configVideoChannel";
+const char* key_amb_bypassVOE1			= " .configVideoChannel";
+const char* key_amb_bypassVOE2			= " configVideoChannel";
+const char* key_amb_header				= "#include";
+const char* key_amb_customized			= "CUSTOMIZED";
+const char* key_json					= "build";
+const char* key_amb						= "Arduino15";
+const char* key_ino						= ".ino";
+const char* ext_json					= ".json";
 const char* key_amb_default				= "DEFAULT";
 const char* key_amb_default_backup		= "Dbackup";
 const char* key_amb_customized_backup	= "Cbackup";
-const char* fname_txt = "ino_validation.txt";
+const char* fname_txt					= "ino_validation.txt";
 
 /* Declear common file paths */
 #ifdef _WIN32
@@ -195,6 +197,87 @@ int main(int argc, char* argv[]) {
 	printf("[%s][INFO] path_example            = %s\n", __func__, path_example);
 	writeJSON(path_example);	//writeTXT(path_example);
 	return 0;
+}
+
+const char* input2filename(const char* directory_path, const char* key) {
+#if PRINT_DEBUG
+	printf("[%s] open the file %s \n", __func__, directory_path);
+#endif
+	FILE* file = fopen(directory_path, "rb");
+	if (file == NULL) {
+		printf("[%s][Error] Failed to open the file.\n", __func__);
+		perror("Error opening file");
+		printf("Error code: %d\n", errno);
+		return 1;
+	}
+
+	// Get the file size
+	fseek(file, 0, SEEK_END);
+	size_t file_size = ftell(file);
+	fseek(file, 0, SEEK_SET);
+	rewind(file);
+
+	// Allocate memory to hold the JSON data
+	char* json_data = (char*)malloc(file_size + 1);
+	if (json_data == NULL) {
+		printf("[%s][Error] Failed to allocate memory.\n", __func__);
+		fclose(file);
+		return 1;
+	}
+
+	// Read the JSON data from the file
+	size_t read_size = fread(json_data, 1, file_size, file);
+#if PRINT_DEBUG
+	printf("[%s][Info] read_size %d\n", __func__, read_size);
+	printf("[%s][Info] file_size %d\n", __func__, file_size);
+#endif
+	if (read_size != file_size) {
+		printf("[%s][Error] Failed to read the file.\n", __func__);
+		fclose(file);
+		free(json_data);
+		return 1;
+	}
+	json_data[file_size] = '\0';  // Null-terminate the string
+
+	// Close the file
+	fclose(file);
+
+	// Parse the JSON data
+	cJSON* data = cJSON_Parse(json_data);
+	if (data == NULL) {
+		printf("[%s][Error] Failed to parse JSON data.\n", __func__);
+		return NULL;
+	}
+	// Print JSON data 
+#if PRINT_DEBUG
+	printf("[%s] json_data %s.\n", __func__, json_data);
+#endif
+
+	//const char* key = "yolov4_tiny";
+
+	cJSON* yolov4_tiny_obj = cJSON_GetObjectItemCaseSensitive(data, key);
+	if (yolov4_tiny_obj == NULL) {
+		printf("Key '%s' not found.\n", key);
+		cJSON_Delete(data);
+		return NULL;
+	}
+
+	cJSON* file_obj = cJSON_GetObjectItemCaseSensitive(yolov4_tiny_obj, "file");
+	if (file_obj == NULL) {
+		printf("Attribute \"file\" not found！\n");
+		cJSON_Delete(data);
+		return 1;
+	}
+
+	const char* value = file_obj->valuestring;
+
+	printf("[%s][Info] Output: %s\n", __func__, value);
+
+	// Clean up cJSON object and allocated memory
+	cJSON_Delete(data);
+	free(json_data);
+
+	return value;
 }
 
 int isDirExists(const char* path) {
@@ -294,45 +377,6 @@ const char* input2header(const char* input) {
 	}
 
 	return header;
-}
-
-const char* input2filename(const char* input) {
-	const char* value_file = NULL;
-	printf("[%s] input %s\n", __func__, input);
-	printf("[%s] input %s\n", __func__, path_model);
-	if (dirExists(path_model)) {
-		DIR* dir = opendir(path_model);
-		struct dirent* entry;
-
-		while ((entry = readdir(dir)) != NULL) {
-			if (endsWith(entry->d_name, ".json")) {
-				char file_json_path[1024];
-				sprintf(file_json_path, "%s/%s", path_model, entry->d_name);
-
-				FILE* f_model = fopen(file_json_path, "r");
-				if (f_model) {
-					char line[1024];
-					while (fgets(line, sizeof(line), f_model)) {
-						// Assuming the JSON structure is known
-						if (strstr(line, input) != NULL && strstr(line, "\"f_model\"") != NULL) {
-							char* start = strchr(line, '\"') + 1;
-							char* end = strrchr(line, '\"');
-							size_t length = end - start;
-							//value_file = malloc(length + 1);
-							//strncpy(value_file, start, length);
-							//value_file[length] = '\0';
-							break;
-						}
-					}
-					fclose(f_model);
-				}
-			}
-		}
-
-		closedir(dir);
-	}
-
-	return value_file;
 }
 
 int dirExists(const char* directory_path) {
@@ -453,15 +497,19 @@ const char* pathTempJSON(const char* directory_path, const char* ext, const char
 }
 
 cJSON* loadJSONFile(const char* directory_path) {
-	FILE* file = fopen(directory_path, "r");
+	printf("[%s] open the file %s \n", __func__, directory_path);
+	FILE* file = fopen(directory_path, "rb");
 	if (file == NULL) {
 		printf("[%s][Error] Failed to open the file.\n", __func__);
+		perror("Error opening file");
+		printf("Error code: %d\n", errno);
 		return 1;
 	}
 
 	// Get the file size
 	fseek(file, 0, SEEK_END);
-	long file_size = ftell(file);
+	size_t file_size = ftell(file);
+	fseek(file, 0, SEEK_SET);
 	rewind(file);
 
 	// Allocate memory to hold the JSON data
@@ -474,6 +522,10 @@ cJSON* loadJSONFile(const char* directory_path) {
 
 	// Read the JSON data from the file
 	size_t read_size = fread(json_data, 1, file_size, file);
+#if PRINT_DEBUG
+	printf("[%s][Info] read_size %d\n", __func__, read_size);
+	printf("[%s][Info] file_size %d\n", __func__, file_size);
+#endif
 	if (read_size != file_size) {
 		printf("[%s][Error] Failed to read the file.\n", __func__);
 		fclose(file);
@@ -487,10 +539,18 @@ cJSON* loadJSONFile(const char* directory_path) {
 
 	// Parse the JSON data
 	cJSON* data = cJSON_Parse(json_data);
+	if (data == NULL) {
+		printf("[%s][Error] Failed to parse JSON data.\n", __func__);
+		return NULL;
+	}
+	// print JSON data 
+#if PRINT_DEBUG
+	printf("[%s] json_data %s.\n", __func__, json_data);
+#endif
 
 	// Clean up cJSON object and allocated memory
 	//cJSON_Delete(data);
-	//free(json_data);
+	free(json_data);
 
 	return data;
 }
@@ -512,6 +572,7 @@ const char* validateINO(const char* directory_path) {
 
 	// Open the JSON file and retrive the data
 	cJSON* data = loadJSONFile(path_build_options_json);
+	
 	// Arduino IDE1.0 
 	cJSON* path_example = cJSON_GetObjectItem(data, "sketchLocation");
 
@@ -602,383 +663,6 @@ void extractRootDirectory(char* filepath, char* rootDir) {
 		printf("[%s] Dir: %s\n", __func__, filepath);
 #endif
 	}
-}
-
-void writeTXT(const char* path) {
-	DIR* dir;
-	struct dirent* ent;
-	const char buf[MAX_PATH_LENGTH] = "";
-	const char backslash[] = "\\";
-	char line[MAX_PATH_LENGTH] = { 0 };
-	unsigned int line_count = 0;
-	char voe_status[100] = "NA";
-	char model_type[100] = "";
-	char model_name_od[100] = "";
-	char model_name_fd[100] = "";
-	char model_name_fr[100] = "";
-	char header_od[100] = "NA";
-	char header_fd[100] = "NA";
-	char header_fr[100] = "NA";
-	char header_all[100] = "";
-	char line_strip_header[100] = "NA";
-	char line_strip_headerNN[100] = "NA";
-	char dir_example[100] = "NA";
-
-	path = path_example;
-
-#if PRINT_DEBUG
-	printf("[%s][INFO] Load example: \"%s\"\n", __func__, path);
-#endif
-
-	updateTXT("----------------------------------");
-	updateTXT("Current ino contains model(s):");
-
-	// check path format: IDE1 file path, IDE2 dir path
-	if (strstr(path, ".ino") == NULL) {
-		printf("IDE2\n");
-		//														update path 
-		DIR* dir;
-		struct dirent* ent;
-
-		// check weather dir is valid
-		if ((dir = opendir(path)) != NULL) {
-			/* print all the files and directories within directory */
-			while ((ent = readdir(dir)) != NULL) {
-				if (ent->d_type == DT_REG && strstr(ent->d_name, ".ino") != NULL) {
-#if PRINT_DEBUG
-					printf("[%s] File:%s\n", __func__, ent->d_name);
-#endif
-					//if (strstr(ent->d_name, ".ino") != NULL) {
-					strcat(path, backspace);
-					strcat(path, ent->d_name);
-					printf("[%s] path:%s\n", __func__, path);
-					//}
-					//else {
-					//	printf("cannot find file ends with .ino \n");
-					//}
-				}
-			}
-		}
-		else {
-			/* opendir() failed for some other reason. */
-			printf("[%s][Error] Faield to open temp dir in IDE2.0 :%s\n", __func__, path);
-			// qqz return EXIT_FAILURE;
-		}
-	}
-
-
-	FILE* f_model = fopen(path, "r");  //FILE* f_model = fopen(path, "r, ccs=UTF-8");
-	char param[100];
-	if (f_model) {
-		char line[1024];
-		while (fgets(line, sizeof(line), f_model)) {
-			/* check whether keywordNN in f_model content */
-			if (strstr(line, key_amb_NN) != NULL && strstr(line, "//") == NULL && strstr(line, key_amb_bypassNN1) == NULL && strstr(line, key_amb_bypassNN2) == NULL) {
-				extractParam(line, param);
-				printf("Extracted parameter: %s\n", param);
-				char* token;
-				token = strtok(param, ", ");
-				if (token != NULL) {
-					strcpy(model_type, token);
-					printf("Model Type: %s\n", model_type);
-					/* ------------------ object detection ------------------*/
-					token = strtok(NULL, ", ");
-					printf("1 token: %s\n", token);
-					if (token != NULL) {
-						// check model combination rules
-						if (strcmp(model_type, "OBJECT_DETECTION") == 0) {
-							if (strcmp(token, "NA_MODEL") == 0 || strstr(token, "YOLO") == NULL) {
-								goto error_combination;
-							}
-							// check customized od model
-							if (strstr(token, key_amb_customized) != NULL) {
-#if PRINT_DEBUG
-								printf("od key_amb_customized\n");
-								printf("customized od: %s\n", input2model(token));
-#endif
-								extractRootDirectory(path_example, dir_example);
-#if PRINT_DEBUG
-								printf("customized dir: %s\n", dir_example);
-#endif
-								DIR* dir;
-								struct dirent* ent;
-								int count = 0;
-
-								// check weather dir is valid
-								if ((dir = opendir(dir_example)) != NULL) {
-									/* print all the files and directories within directory */
-									while ((ent = readdir(dir)) != NULL) {
-										if (ent->d_type == DT_REG) {
-											count++;
-										}
-										if (strstr(ent->d_name, ".nb") != NULL) {
-											if (strstr(ent->d_name, "yolo") != NULL) {
-#if PRINT_DEBUG
-												printf("%s\n", ent->d_name);
-#endif
-											}
-											else {
-												goto error_customized_mismatch;
-											}
-										}
-									}
-								}
-								if (count <= 1) {
-									goto error_customized_missing;
-								}
-							}
-						}
-						strcpy(model_name_od, token);
-						/* ----------------- face detection -----------------*/
-						token = strtok(NULL, ", ");
-						printf("2 token: %s\n", token);
-						if (token != NULL) {
-							// check model combination rules
-							if (strcmp(model_type, "FACE_DETECTION") == 0) {
-								if (strcmp(token, "NA_MODEL") == 0 || strstr(token, "SCRFD") == NULL) {
-									goto error_combination;
-								}
-								// check customized fd model
-								if (strstr(token, key_amb_customized) != NULL) {
-									printf("fd key_amb_customized\n");
-									printf("customized fd: %s\n", input2model(token));
-									extractRootDirectory(path_example, dir_example);
-									printf("customized dir: %s\n", dir_example);
-
-									DIR* dir;
-									struct dirent* ent;
-									int count = 0;
-
-									// check weather dir is valid
-									if ((dir = opendir(dir_example)) != NULL) {
-										/* print all the files and directories within directory */
-										while ((ent = readdir(dir)) != NULL) {
-											if (ent->d_type == DT_REG) {
-												count++;
-											}
-											if (strstr(ent->d_name, ".nb") != NULL) {
-												if (strstr(ent->d_name, "scrfd") != NULL) {
-#if PRINT_DEBUG
-													printf("%s\n", ent->d_name);
-#endif
-												}
-												else {
-													goto error_customized_mismatch;
-												}
-											}
-										}
-									}
-									if (count <= 1) {
-										goto error_customized_missing;
-									}
-								}
-							}
-							strcpy(model_name_fd, token);
-							/*-------------- face recognition --------------*/
-							token = strtok(NULL, ", ");
-							printf("3 token: %s\n", token);
-							// check model combination rules
-							if (strcmp(model_type, "FACE_RECOGNITION") == 0) {
-								if (strcmp(model_name_fd, "NA_MODEL") == 0 || strstr(model_name_fd, "SCRFD") == NULL || strcmp(token, "NA_MODEL") == 0 || strstr(token, "MOBILEFACENET") == NULL) {
-									goto error_combination;
-								}
-								// check customized fr model
-								if (strstr(token, key_amb_customized) != NULL) {
-									printf("fr key_amb_customized\n");
-									printf("customized fr: %s\n", input2model(token));
-									extractRootDirectory(path_example, dir_example);
-									printf("customized dir: %s\n", dir_example);
-
-									DIR* dir;
-									struct dirent* ent;
-									int count = 0;
-
-									// check weather dir is valid
-									if ((dir = opendir(dir_example)) != NULL) {
-										/* print all the files and directories within directory */
-										while ((ent = readdir(dir)) != NULL) {
-											if (ent->d_type == DT_REG) {
-												count++;
-											}
-											if (strstr(ent->d_name, ".nb") != NULL) {
-												if (strstr(ent->d_name, "mobilefacenet") != NULL) {
-#if PRINT_DEBUG
-													printf("%s\n", ent->d_name);
-#endif
-												}
-												else {
-													goto error_customized_mismatch;
-												}
-											}
-										}
-									}
-									if (count <= 1) {
-										goto error_customized_missing;
-									}
-								}
-							}
-							if (token != NULL) {
-								strcpy(model_name_fr, token);
-							}
-						}
-					}
-
-					/* default settings for all models */
-					else {
-						/* provide default settings for all models if user never provide any selections*/
-						if (strcmp(model_type, "OBJECT_DETECTION") == 0 && strcmp(input2model(model_name_od), "NA") == 0) {
-							printf("111\n");
-							strcpy(model_name_od, "DEFAULT_YOLOV4TINY");
-							strcpy(model_name_fd, "NA_MODEL");
-							strcpy(model_name_fr, "NA_MODEL");
-						}
-						if (strcmp(model_type, "FACE_DETECTION") == 0 && strcmp(input2model(model_name_od), "NA") == 0) {
-							printf("222\n");
-							strcpy(model_name_od, "NA_MODEL");
-							strcpy(model_name_fd, "DEFAULT_SCRFD");
-							strcpy(model_name_fr, "NA_MODEL");
-						}
-						if (strcmp(model_type, "FACE_RECOGNITION") == 0 && strcmp(input2model(model_name_od), "NA") == 0) {
-							printf("333\n");
-							strcpy(model_name_od, "NA_MODEL");
-							strcpy(model_name_fd, "DEFAULT_SCRFD");
-							strcpy(model_name_fr, "DEFAULT_MOBILEFACENET");
-						}
-					}
-				}
-				fclose(f_model);
-				printf("-------------------------------------\n");
-				printf("Model Name OD: %s\n", input2model(model_name_od));
-				printf("Model Name FD: %s\n", input2model(model_name_fd));
-				printf("Model Name FR: %s\n", input2model(model_name_fr));
-				printf("-------------------------------------\n");
-				updateTXT(input2model(model_name_od));
-				updateTXT(input2model(model_name_fd));
-				updateTXT(input2model(model_name_fr));
-			}
-		}
-	}
-	else {
-		printf("[%s][Error] 1 Failed to open the file.\n", __func__);
-		perror(path);
-		// qqz return EXIT_FAILURE;
-	}
-	// update NA for non-NN examples
-	if (strlen(model_name_od) == 0 && strlen(model_name_fd) == 0 && strlen(model_name_fr) == 0) {
-		for (int i = 0; i < 3; i++) {
-			updateTXT("NA");
-		}
-	}
-
-	updateTXT("-----------------------------------");
-	updateTXT("Current NN header file(s): ");
-
-	FILE* f_headerNN = fopen(path, "r");  //FILE* file = fopen(path, "r, ccs=UTF-8");
-	if (f_headerNN) {
-		char line[1024];
-		while (fgets(line, sizeof(line), f_headerNN)) {
-			/* check whether keywordNN in file content */
-			if (strstr(line, key_amb_header) != NULL && strstr(line, "NN") != NULL) {
-				if (strstr(line, "Object") != NULL) {
-					extractString(line, header_fd);
-				}
-				if (strstr(line, "FaceDetection") != NULL) {
-					extractString(line, header_fd);
-				}
-				if (strstr(line, "FaceRecognition") != NULL) {
-					extractString(line, header_fd);
-				}
-			}
-		}
-#if PRINT_DEBUG
-		printf("Extracted od string: %s\n", header_od);
-		printf("Extracted fd string: %s\n", header_fd);
-		printf("Extracted fr string: %s\n", header_fr);
-		printf("-------------------------------------\n");
-#endif
-		fclose(f_headerNN);
-	}
-	else {
-		printf("[%s][Error] 2 Failed to open the file.\n", __func__);
-		perror(path);
-		// qqz return EXIT_FAILURE;
-	}
-	updateTXT(header_od);
-	updateTXT(header_fd);
-	updateTXT(header_fr);
-
-	updateTXT("----------------------------------");
-	updateTXT("Current ino video status:");
-
-	FILE* f_VOE = fopen(path, "r");  //FILE* f_model = fopen(path, "r, ccs=UTF-8");
-	if (f_VOE) {
-		char line[1024];
-		while (fgets(line, sizeof(line), f_VOE)) {
-			/* check whether keywordVOE in file content */
-			if (strstr(line, key_amb_VOE) != NULL && strstr(line, "//") == NULL && strstr(line, key_amb_bypassVOE1) == NULL && strstr(line, key_amb_bypassVOE2) == NULL) {
-				strcpy(voe_status, "ON");
-			}
-		}
-		fclose(f_VOE);					// update NA for video status
-	}
-	else {
-		printf("[%s][Error] Failed to open the file.\n", __func__);
-		perror(path);
-		// qqz return EXIT_FAILURE;
-	}
-	updateTXT(voe_status);
-
-	updateTXT("-------------------------------------");
-	updateTXT("Current ino contains header file(s): ");
-
-	FILE* f_header = fopen(path, "r");  //FILE* f_model = fopen(path, "r, ccs=UTF-8");
-	if (f_header) {
-		char line[1024];
-		while (fgets(line, sizeof(line), f_header)) {
-			/* check whether keyword_header in file content */
-			if (strstr(line, key_amb_header) != NULL) {
-				extractString(line, line_strip_header);	// remove unnecessary part in the header
-				if (strlen(line_strip_header) == 0) {
-					extractString2(line, line_strip_header);
-				}
-				strcat(line_strip_header, ", ");
-				strcat(header_all, line_strip_header); // store headers into a string
-			}
-		}
-		fclose(f_header);
-
-		// update header_all to txt
-		char* header_item;
-		header_item = strtok(header_all, ", ");
-		while (header_item != NULL) {
-#ifdef PRINT_DEBUG
-			printf("%s\n", header_item);
-#endif
-			updateTXT(header_item);
-			header_item = strtok(NULL, ", ");
-		}
-
-	}
-	else {
-		printf("[%s][Error] Failed to open the file.\n", __func__);
-		perror(path);
-		// qqz return EXIT_FAILURE;
-	}
-	if (strcmp(line_strip_header, "NA") == NULL) {
-		updateTXT(line_strip_header);
-	}
-	updateTXT("--------------------------------------");
-
-	// qqz return 0;
-
-error_combination:
-	error_handler("Model combination mismatch. Please check modelSelect() again.");
-
-error_customized_missing:
-	error_handler("Model missing. Please check your sketch folder again.");
-
-error_customized_mismatch:
-	error_handler("Customized model mismatch. Please check your sketch folder again.");
 }
 
 void resetJSON(const char* input) {
@@ -1076,6 +760,9 @@ void writeJSON(const char* f_path) {
 	char header_fd[100] = "NA";
 	char header_fr[100] = "NA";
 	char header_all[100] = "";
+	char fname_od[100] = "NA";
+	char fname_fd[100] = "NA";
+	char fname_fr[100] = "NA";
 	char line_strip_header[100] = "NA";
 	char line_strip_headerNN[100] = "NA";
 	char dir_example[100] = "NA";
@@ -1118,7 +805,7 @@ void writeJSON(const char* f_path) {
 	FILE* f_model = fopen(f_path, "r");
 	char param[100];
 	if (f_model) {
-		char line[1024];
+		char line[MAX_PATH_LENGTH];
 		while (fgets(line, sizeof(line), f_model)) {
 			/* check whether keywordNN in f_model content */
 			if (strstr(line, key_amb_NN) != NULL && strstr(line, "//") == NULL && strstr(line, key_amb_bypassNN1) == NULL && strstr(line, key_amb_bypassNN2) == NULL) {
@@ -1191,36 +878,56 @@ void writeJSON(const char* f_path) {
 									printf("-----------------------------------------\n");
 									printf("  fd key_amb_customized\n");
 									printf("  customized fd: %s\n", input2model(token));
+									// goto path_model and open the file ends with .json
+									if (dirExists(path_model)) {
+										DIR* dir = opendir(path_model);
+										struct dirent* entry;
+
+										while ((entry = readdir(dir)) != NULL) {
+											if (endsWith(entry->d_name, ".json")) {
+												char fpath_nn_json[MAX_PATH_LENGTH];
+												char dir_nn_json[MAX_PATH_LENGTH];
+
+												sprintf(fpath_nn_json, "%s\\%s", path_model, entry->d_name);
+												cJSON* fname_model = input2filename(fpath_nn_json, input2model(token));
+												strcpy(fname_od, fname_model);
+											}
+										}
+									}
 									extractRootDirectory(path_example, dir_example);
 
 									DIR* dir;
 									struct dirent* ent;
 									int count = 0;
 
-									// check weather dir is valid
+									/* check weather example directory is valid */ 
 									if ((dir = opendir(path_example)) != NULL) {
-										printf("[%s] Dir: %s\n", __func__, path_example);
 										/* print all the files and directories within directory */
 										while ((ent = readdir(dir)) != NULL) {
 											if (ent->d_type == DT_REG) {
 												count++;
 											}
-											/* check model naming convension */
+											/* check model file (.nb) within example directory */
 											if (strstr(ent->d_name, ".nb") != NULL) {
-												if (strstr(ent->d_name, "scrfd") != NULL) {
+												if (strstr(ent->d_name, "scrfd") != NULL) {		// model naming convension check
 #if PRINT_DEBUG
 													printf("[%s] model fname %s\n", __func__, ent->d_name);
-													// if name not inside naming convension scrfd_500m_bnkps_640x640_u8.nb
-													// check 
-													input2filename(ent->d_name);
-													// goto [Error] Customized model scrfd_500m_bnkps_640x640_u8.nb not found. Please check your sketch folder again.
-													// else
-													// backupModel();
-													// ----
-													// check when to revertModel()
-
-													
+													printf("[%s] json fname %s\n", __func__, fname_od);
 #endif
+													if (strcmp(ent->d_name, fname_od) != 0) {	// exampel file name does not match in json
+														goto error_customized_mismatch;
+													}
+													else {		
+														// --if name not inside naming convension scrfd_500m_bnkps_640x640_u8.nb
+														// --check 
+														// --input2filename(ent->d_name);
+														// --goto [Error] Customized model scrfd_500m_bnkps_640x640_u8.nb not found. Please check your sketch folder again.
+														// else
+														// backupModel();
+														// ----
+														// check when to revertModel()	
+													}
+													exit(1);
 												}
 												else {
 													goto error_customized_mismatch;
