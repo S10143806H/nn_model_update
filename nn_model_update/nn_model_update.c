@@ -80,7 +80,7 @@ const char* input2model(const char* input);
 void extractRootDirectory(char* source, char* result);
 // -------------------------------------------------------------
 /* Conveert model input type to model filename*/
-const char* input2filename(const char* dest_path, const char* input);
+const char* input2filename(const char* input);
 /* Conveert model input type to model header f_model*/
 const char* input2header(const char* input);
 
@@ -110,7 +110,7 @@ const char* ext_json = ".json";
 const char* key_amb_default				= "DEFAULT";
 const char* key_amb_default_backup		= "Dbackup";
 const char* key_amb_customized_backup	= "Cbackup";
-const char* filename_txt = "ino_validation.txt";
+const char* fname_txt = "ino_validation.txt";
 
 /* Declear common file paths */
 #ifdef _WIN32
@@ -141,7 +141,7 @@ char path_root[MAX_PATH_LENGTH];
 char path_arduino15[MAX_PATH_LENGTH];
 char path_pro2[MAX_PATH_LENGTH];
 char path_model[MAX_PATH_LENGTH];
-char path_txtfile[MAX_PATH_LENGTH];
+char path_txt[MAX_PATH_LENGTH];
 
 int main(int argc, char* argv[]) {
 
@@ -173,11 +173,8 @@ int main(int argc, char* argv[]) {
 	strcpy(path_model, path_pro2);
 	strcat(path_model, dirName(path_pro2));
 	strcat(path_model, path_model_add);
-	strcpy(path_txtfile, argv[2]);
-	strcat(path_txtfile, path_txtfile_add);
-
-	// Check if contains more than 1 SDK
-
+	strcpy(path_txt, argv[2]);
+	strcat(path_txt, path_txtfile_add);
 
 	// Print the input parameters 
 	printf("Parameter 1      = %s\n", path_build);
@@ -190,10 +187,9 @@ int main(int argc, char* argv[]) {
 	printf("path_pro2        = %s\n", path_pro2);
 	printf("ver_pro2         = %s\n", dirName(path_pro2));
 	printf("path_model       = %s\n", path_model);
-	printf("path_txtfile     = %s\n", path_txtfile);
+	printf("path_txt         = %s\n", path_txt);
 
-	
-	resetJSON(path_model);		//resetTXT(path_txtfile);
+	resetJSON(path_model);		//resetTXT(path_txt);
 	printf("[%s][INFO] resetJSON done\n", __func__);
 	path_build_options_json = pathTempJSON(path_build, ext_json, key_json);
 	path_example = validateINO(path_build);
@@ -301,17 +297,18 @@ const char* input2header(const char* input) {
 	return header;
 }
 
-const char* input2filename(const char* dest_path, const char* input) {
+const char* input2filename(const char* input) {
 	const char* value_file = NULL;
-
-	if (dirExists(dest_path)) {
-		DIR* dir = opendir(dest_path);
+	printf("[%s] input %s\n", __func__, input);
+	printf("[%s] input %s\n", __func__, path_model);
+	if (dirExists(path_model)) {
+		DIR* dir = opendir(path_model);
 		struct dirent* entry;
 
 		while ((entry = readdir(dir)) != NULL) {
 			if (endsWith(entry->d_name, ".json")) {
 				char file_json_path[1024];
-				sprintf(file_json_path, "%s/%s", dest_path, entry->d_name);
+				sprintf(file_json_path, "%s/%s", path_model, entry->d_name);
 
 				FILE* f_model = fopen(file_json_path, "r");
 				if (f_model) {
@@ -328,7 +325,6 @@ const char* input2filename(const char* dest_path, const char* input) {
 							break;
 						}
 					}
-
 					fclose(f_model);
 				}
 			}
@@ -392,7 +388,7 @@ void resetTXT(const char* directory_path) {
 	if (stat(dir, &st) == -1) {
 		mkdir(dir, 0700);
 	}
-	strcat(directory_path, filename_txt);
+	strcat(directory_path, fname_txt);
 
 	// open txt file and clear everything
 	FILE* file = fopen(directory_path, "w");
@@ -402,7 +398,8 @@ void resetTXT(const char* directory_path) {
 }
 
 void updateTXT(const char* input) {
-	FILE* file = fopen(path_txtfile, "a");
+	//strcat(path_txt, fname_txt);
+	FILE* file = fopen(path_txt, "a");
 
 	if (file) {
 		fprintf(file, "%s\n", input);
@@ -412,7 +409,7 @@ void updateTXT(const char* input) {
 #if PRINT_DEBUG
 		printf("[%s][Error] Failed to open the file.\n", __func__);
 #endif	
-		perror(path_txtfile);
+		perror(path_txt);
 		// qqz return EXIT_FAILURE;
 	}
 }
@@ -595,14 +592,17 @@ void extractString2(char* source, char* result) {
 }
 
 void extractRootDirectory(char* filepath, char* rootDir) {
-	char* lastSeparator = strrchr(filepath, backspace); // find last occurance of backspace
-	if (lastSeparator == NULL) {
-		strcpy(rootDir, ""); // set as empty string if not found
-		return;
+#ifdef _WIN32
+	char* lastBackslash = strrchr(filepath, '\\');
+#else
+	char* lastBackslash = strrchr(filepath, '/');
+#endif
+	if (lastBackslash != NULL) {
+		*lastBackslash = '\0';
+#if PRINT_DEBUG
+		printf("[%s] Dir: %s\n", __func__, filepath);
+#endif
 	}
-	int length = lastSeparator - filepath + 1;
-	strncpy(rootDir, filepath, length);
-	rootDir[length] = '\0'; // add ending param at EOL
 }
 
 void writeTXT(const char* path) {
@@ -1086,14 +1086,12 @@ void writeJSON(const char* f_path) {
 #if PRINT_DEBUG
 	printf("[%s][INFO] Load example: \"%s\"\n", __func__, f_path);
 #endif
-
-	updateTXT("----------------------------------");
-	updateTXT("Current ino contains model(s):");
-
-	// check path format: IDE1 file path, IDE2 dir path
+	
+	/* check path format : IDE1 file path, IDE2 dir path */ 
 	if (strstr(f_path, ".ino") == NULL) {
+#if PRINT_DEBUG
 		printf("IDE2\n");
-		//														update path 
+#endif
 		DIR* dir;
 		struct dirent* ent;
 
@@ -1105,14 +1103,9 @@ void writeJSON(const char* f_path) {
 #if PRINT_DEBUG
 					printf("[%s] File:%s\n", __func__, ent->d_name);
 #endif
-					//if (strstr(ent->d_name, ".ino") != NULL) {
 					strcat(f_path, backspace);
 					strcat(f_path, ent->d_name);
 					printf("[%s] path:%s\n", __func__, f_path);
-					//}
-					//else {
-					//	printf("cannot find file ends with .ino \n");
-					//}
 				}
 			}
 		}
@@ -1122,9 +1115,8 @@ void writeJSON(const char* f_path) {
 			// qqz return EXIT_FAILURE;
 		}
 	}
-
-
-	FILE* f_model = fopen(f_path, "r");  //FILE* f_model = fopen(path, "r, ccs=UTF-8");
+	
+	FILE* f_model = fopen(f_path, "r");
 	char param[100];
 	if (f_model) {
 		char line[1024];
@@ -1197,26 +1189,38 @@ void writeJSON(const char* f_path) {
 								}
 								// check customized fd model
 								if (strstr(token, key_amb_customized) != NULL) {
-									printf("fd key_amb_customized\n");
-									printf("customized fd: %s\n", input2model(token));
+									printf("-----------------------------------------\n");
+									printf("  fd key_amb_customized\n");
+									printf("  customized fd: %s\n", input2model(token));
 									extractRootDirectory(path_example, dir_example);
-									printf("customized dir: %s\n", dir_example);
 
 									DIR* dir;
 									struct dirent* ent;
 									int count = 0;
 
 									// check weather dir is valid
-									if ((dir = opendir(dir_example)) != NULL) {
+									if ((dir = opendir(path_example)) != NULL) {
+										printf("[%s] Dir: %s\n", __func__, path_example);
 										/* print all the files and directories within directory */
 										while ((ent = readdir(dir)) != NULL) {
 											if (ent->d_type == DT_REG) {
 												count++;
 											}
+											/* check model naming convension */
 											if (strstr(ent->d_name, ".nb") != NULL) {
 												if (strstr(ent->d_name, "scrfd") != NULL) {
 #if PRINT_DEBUG
-													printf("%s\n", ent->d_name);
+													printf("[%s] model fname %s\n", __func__, ent->d_name);
+													// if name not inside naming convension scrfd_500m_bnkps_640x640_u8.nb
+													// check 
+													input2filename(ent->d_name);
+													// goto [Error] Customized model scrfd_500m_bnkps_640x640_u8.nb not found. Please check your sketch folder again.
+													// else
+													// backupModel();
+													// ----
+													// check when to revertModel()
+
+													
 #endif
 												}
 												else {
@@ -1225,6 +1229,7 @@ void writeJSON(const char* f_path) {
 											}
 										}
 									}
+									printf("[%s] %d\n", __func__, count);
 									if (count <= 1) {
 										goto error_customized_missing;
 									}
@@ -1309,12 +1314,16 @@ void writeJSON(const char* f_path) {
 				printf("Model Name FD: %s\n", input2model(model_name_fd));
 				printf("Model Name FR: %s\n", input2model(model_name_fr));
 				printf("-------------------------------------\n");
-				updateTXT(input2model(model_name_od));
-				updateTXT(input2model(model_name_fd));
-				updateTXT(input2model(model_name_fr));
+				//updateTXT(input2model(model_name_od));
+				//updateTXT(input2model(model_name_fd));
+				//updateTXT(input2model(model_name_fr));
+
+				// ---------------------------------------
+				// default add in at least one model for NN examples
 			}
 		}
 	}
+	return 0;
 
 error_combination:
 	error_handler("Model combination mismatch. Please check modelSelect() again.");
