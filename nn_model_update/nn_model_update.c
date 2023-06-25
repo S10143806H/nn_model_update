@@ -136,7 +136,6 @@ char* backspace = "/";
 const char* path_build_options_json = NULL;
 const char* path_example = NULL;
 const char* name_example = NULL;
-
 char path_root[MAX_PATH_LENGTH];
 char path_arduino15[MAX_PATH_LENGTH];
 char path_pro2[MAX_PATH_LENGTH];
