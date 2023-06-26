@@ -48,6 +48,7 @@ Jul
 
 #define PRINT_DEBUG		1
 #define MAX_PATH_LENGTH 1024
+#define BUFFER_SIZE		4096
 
 /* Declear function headers */
 int dirExists(const char* directory_path);
@@ -81,26 +82,28 @@ const char* input2model(const char* input);
 void extractRootDirectory(char* source, char* result);
 /* Convert model input to model filename as defined in json */
 const char* input2filename(const char* directory_path, const char* key);
-
+/* Retrun the date in YYYY-MM-DD of the file creation */
+char* dspFileProp(const char* f_name);
+/* Add prefix Dmodel/Cmodel for backup .nb files */
+void renameFile(char* filename, int type);
+/* Backup files from source to destination dir, can be merged with renameFile */
+void backupModel(char* input, char* sktech_path);
+/* Copy files from source to destination dir, can be merged with renameFile */
+void copyFile(const char* sourcePath, const char* destinationPath);
 // -------------------------------------------------------------
 
 /* Convert model input type to model header f_model*/
 const char* input2header(const char* input);
 
-void validateJSON(void);
 void resetJSON(const char* input);
-void updateJSON(const char* input);
+
+void updateJSON(const char* input, const char* destPath);
 /* Function to update JSON */
 void writeJSON(const char* f_path);
-bool dupCheckJSON(const char* input);
 
-char* dspFileProp(const char* f_name);
+int dupCheckJSON(const char* input, const char* destPath);
 
-void renameFile(char* filename, int type);
-
-void backupModel(char* input, char* sktech_path);
-
-void rvtModel(const char* input);
+void revertModel(const char* input, const char* destPath, const char* keywordDefaultBackup);
 
 
 /* Declear global vairables */
@@ -206,9 +209,25 @@ int main(int argc, char* argv[]) {
 	printf("[%s][INFO] path_example            = %s\n", __func__, path_example);
 	writeJSON(path_example);	//writeTXT(path_example);
 	return 0;
+
+	
+	const char* input = "input";
+	const char* destPath = "path/to/destination";
+	const char* keywordDefaultBackup = "keyword";
+
+	revertModel(input, destPath, keywordDefaultBackup);
+
+	int isDuplicate = dupCheckJSON(input, destPath);
+	if (isDuplicate) {
+		printf("Duplicate found.\n");
+	}
+	else {
+		printf("No duplicate found.\n");
+	}
+	
+	updateJSON(input, destPath);
+
 }
-
-
 
 const char* input2filename(const char* directory_path, const char* key) {
 #if PRINT_DEBUG
@@ -670,9 +689,6 @@ void extractRootDirectory(char* filepath, char* rootDir) {
 #endif
 	if (lastBackslash != NULL) {
 		*lastBackslash = '\0';
-#if PRINT_DEBUG
-		printf("[%s] Dir: %s\n", __func__, filepath);
-#endif
 	}
 }
 
@@ -755,43 +771,64 @@ void resetJSON(const char* input) {
 	closedir(dir);
 }
 
-char* convert_space_to_dash(const char* str) {
-	char* new_str = malloc(strlen(str) + 1);
-	int i = 0;
-	int j = 0;
-	while (str[i] != '\0') {
-		if (str[i] == ' ') {
-			new_str[j] = '-';
-		}
-		else {
-			new_str[j] = str[i];
-		}
-		i++;
-		j++;
-	}
-	new_str[j] = '\0';
-	return new_str;
-}
-
 char* dspFileProp(const char* filename) {
 	struct stat file_model_stats;
 	if (stat(filename, &file_model_stats) == -1) {
 		fprintf(stderr, "[Error] Default model %s does not exist. Please check %s again.\n", filename, filename);
 		exit(1);
 	}
+	// Get the file creation time
+	time_t fileCreationTime = file_model_stats.st_mtime;
 
-	char* file_model_date = ctime(&file_model_stats.st_mtime);
-	file_model_date[24] = '\0';
-	//return file_model_date;
-	return convert_space_to_dash(file_model_date);
+	// Format the file creation time
+	char fileCreationDate[11];
+	strftime(fileCreationDate, sizeof(fileCreationDate), "%Y-%m-%d", localtime(&fileCreationTime));
+
+
+#if PRINT_DEBUG
+	printf("[%s][INFO] File creation date: %s\n",__func__, fileCreationDate);
+#endif
+	return fileCreationDate;
+}
+
+void copyFile(const char* sourcePath, const char* destinationPath) {
+	FILE* sourceFile;
+	FILE* destinationFile;
+	char buffer[BUFFER_SIZE];
+	size_t bytesRead;
+
+	// Open the source file for reading
+	sourceFile = fopen(sourcePath, "rb");
+	if (sourceFile == NULL) {
+		printf("Failed to open the source file: %s\n", sourcePath);
+		return;
+	}
+
+	// Open the destination file for writing
+	destinationFile = fopen(destinationPath, "wb");
+	if (destinationFile == NULL) {
+		printf("Failed to create the destination file: %s\n", destinationPath);
+		fclose(sourceFile);
+		return;
+	}
+
+	// Copy data from source file to destination file
+	while ((bytesRead = fread(buffer, 1, BUFFER_SIZE, sourceFile)) > 0) {
+		fwrite(buffer, 1, bytesRead, destinationFile);
+	}
+
+	// Close the files
+	fclose(sourceFile);
+	fclose(destinationFile);
+
+	printf("File copied successfully.\n");
 }
 
 void renameFile(char* filename, int type) {
-	char dest_path[100] = "";	// Replace with the desired destination path
+	char dest_path[100] = "";					// Replace with the desired destination path
 
-	if (type == 1) {			// Backup Dmodel
+	if (type == 1) {							// Backup Dmodel
 		char filename_modified[200] = "";
-		char dsp_file_prop[100] = "";
 		
 		// original model filename
 		strcat(path_model, backspace);
@@ -804,6 +841,33 @@ void renameFile(char* filename, int type) {
 		strcat(filename_modified, filename);
 		printf("[%s] %s\n", __func__, filename_modified);
 
+		extractRootDirectory(path_model, dir_model);
+		char source_path[300] = "";
+		strcat(source_path, path_model);
+		strcat(source_path, backspace);
+		strcat(source_path, filename);
+		printf("[%s] source_path %s\n", __func__, source_path);
+
+		char destination_path[300] = "";
+		strcat(destination_path, path_model);
+		strcat(destination_path, backspace);
+        strcat(destination_path, filename_modified);
+		printf("[%s] destination_path %s\n", __func__, destination_path);
+
+		// copying file from source path -> dest path
+		copyFile(source_path, destination_path);
+		printf("[%s][INFO] Dmodel Backup done.\n", __func__);
+	}
+	else {										// Backup Cmodel
+		char filename_modified[200] = "";
+			
+		// Construct the modified filename
+		strcat(filename_modified, "Cbackup_");
+		strcat(filename_modified, dspFileProp(path_model));
+		strcat(filename_modified, "_");
+		strcat(filename_modified, filename);
+		printf("[%s] %s\n", __func__, filename_modified);
+
 		char source_path[300] = "";
 		strcat(source_path, dir_example);
 		strcat(source_path, backspace);
@@ -811,46 +875,15 @@ void renameFile(char* filename, int type) {
 		printf("[%s] source_path %s\n", __func__, source_path);
 
 		char destination_path[300] = "";
-		extractRootDirectory(path_model, dir_model);
+		//extractRootDirectory(path_model, dir_model);
 		strcat(destination_path, path_model);
 		strcat(destination_path, backspace);
 		strcat(destination_path, filename_modified);
 		printf("[%s] destination_path %s\n", __func__, destination_path);
 
-		//---------------------------------------------- TODO: copying file from 1 source path -> dest path
-		if (rename(source_path, destination_path) != 0) {
-			perror("Error occurred while renaming the file");
-			exit(1);
-		}
-		
-		printf("[%s][INFO] Dmodel Backup done.\n", __func__);
-		exit(1);
-	}
-	else {					// Backup Cmodel
-		char filename_modified[200] = "";
-		char dsp_file_prop[100] = ""; // Replace with the appropriate dspFileProp() implementation
-
-		// Construct the modified filename
-		strcat(filename_modified, "Cbackup_");
-		strcat(filename_modified, dsp_file_prop);
-		strcat(filename_modified, "_");
-		strcat(filename_modified, filename);
-
-		char source_path[300] = "";
-		strcat(source_path, dest_path);
-		strcat(source_path, filename);
-
-		char destination_path[300] = "";
-		strcat(destination_path, dest_path);
-		strcat(destination_path, filename_modified);
-
-
-		if (rename(source_path, destination_path) != 0) {
-			perror("Error occurred while renaming the file");
-			exit(1);
-		}
-
-		printf("[INFO] Cmodel Backup done.\n");
+		// copying file from source path -> dest path
+		copyFile(source_path, destination_path);
+		printf("[%s][INFO] Cmodel Backup done.\n", __func__);
 	}
 }
 
@@ -867,70 +900,59 @@ void backupModel(char* input, char* sktech_path) {
 		}
 		closedir(dir);
 	}
-
 	renameFile(input, 1);
-	
-	exit(1);
-	// Backup Cmodel: source sketch folder, dest viriant folder
-	char source_path[300] = "";
-	strcat(source_path, sktech_path);
-	strcat(source_path, backspace);
-	strcat(source_path, input);
+	renameFile(input, 0);
+}
 
-	char destination_path[300] = "";
-	strcat(destination_path, path_model);
-	strcat(destination_path, backspace);
-	strcat(destination_path, input);
+void revertModel(const char* input, const char* destPath, const char* keywordDefaultBackup) {
+	DIR* dir;
+	struct dirent* entry;
 
-	printf("source_path '%s':\n", source_path);
-	printf("destination_path '%s':\n", destination_path);
+	// Open the destination directory
+	dir = opendir(destPath);
+	if (dir == NULL) {
+		printf("Failed to open the destination directory: %s\n", destPath);
+		return;
+	}
 
-	FILE* source_file = fopen(source_path, "rb");
-	FILE* destination_file = fopen(destination_path, "wb");
-	if (source_file && destination_file) {
-		char buffer[4096];
-		size_t bytes_read;
+	while ((entry = readdir(dir)) != NULL) {
+		const char* destFile = entry->d_name;
 
-		while ((bytes_read = fread(buffer, 1, sizeof(buffer), source_file)) > 0) {
-			fwrite(buffer, 1, bytes_read, destination_file);
+		// Check if the destination file matches the criteria
+		if (strstr(destFile, keywordDefaultBackup) != NULL && strstr(destFile, input) != NULL) {
+			printf("[INFO] Default backup model %s found.\n", destFile);
+
+			// Extract the file model name
+			char* fileModelReverted = strtok(destFile, "_");
+			fileModelReverted = strtok(NULL, "_");
+			fileModelReverted = strtok(NULL, "_");
+
+			// Remove the user model file
+			char userModelPath[256];
+			snprintf(userModelPath, sizeof(userModelPath), "%s/%s", destPath, fileModelReverted);
+			if (remove(userModelPath) == 0) {
+				printf("[INFO] User Model %s has been removed.\n", fileModelReverted);
+
+				// Revert the default backup
+				char destFilePath[256];
+				snprintf(destFilePath, sizeof(destFilePath), "%s/%s", destPath, destFile);
+				char revertFilePath[256];
+				snprintf(revertFilePath, sizeof(revertFilePath), "%s/%s", destPath, fileModelReverted);
+				if (rename(destFilePath, revertFilePath) == 0) {
+					printf("[INFO] Revert %s done.\n", input);
+				}
+				else {
+					printf("Failed to revert %s.\n", input);
+				}
+			}
+			else {
+				printf("Failed to remove the user model %s.\n", fileModelReverted);
+			}
 		}
-
-		fclose(source_file);
-		fclose(destination_file);
 	}
-	else {
-		perror("Error occurred while copying the file");
-		exit(1);
-	}
-	
-	// renameFile(input, 0);
 
-    // Copy Cmodel
-    char destination_path_copy[300] = "";
-    strcat(destination_path_copy, destination_path);
-    strcat(destination_path_copy, backspace);
-    strcat(destination_path_copy, input);
-
-    FILE* source_cfile = fopen(source_path, "rb");
-    FILE* destination_cfile = fopen(destination_path_copy, "wb");
-
-    if (source_cfile && destination_cfile) {
-		char buffer[4096];
-        size_t bytes_read;
-		while ((bytes_read = fread(buffer, 1, sizeof(buffer), source_cfile)) > 0) {
-			fwrite(buffer, 1, bytes_read, destination_cfile);
-        }
-		fclose(source_cfile);
-		fclose(destination_cfile);
-    } 
-	else {
-            perror("Error occurred while copying the file");
-            exit(1);
-    }
-
-    printf("[INFO] Cmodel copied.\n");
-
-	exit(1);
+	// Close the directory
+	closedir(dir);
 }
 
 void writeJSON(const char* f_path) {
@@ -1112,7 +1134,8 @@ void writeJSON(const char* f_path) {
 														printf("[%s][Info] Found customized model %s\n", __func__, ent->d_name);
 #endif
 														backupModel(ent->d_name, dir_example);
-														// check when to revertModel()	
+														// check when to revertModel()
+														// if default_model but contains cmodel_xx.nb
 													}
 													exit(1);
 												}
@@ -1226,4 +1249,186 @@ error_customized_missing:
 
 error_customized_mismatch:
 	error_handler("Customized model mismatch. Please check your sketch folder again.");
+}
+
+int dupCheckJSON(const char* input, const char* destPath) {
+	DIR* dir;
+	struct dirent* entry;
+
+	// Open the destination directory
+	dir = opendir(destPath);
+	if (dir == NULL) {
+		printf("Failed to open the destination directory: %s\n", destPath);
+		return 0;
+	}
+
+	int isDuplicate = 0;
+
+	while ((entry = readdir(dir)) != NULL) {
+		const char* destFile = entry->d_name;
+
+		// Check if the destination file is a JSON file
+		if (strstr(destFile, ".json") != NULL) {
+			printf("Processing JSON file: %s\n", destFile);
+
+			// Open the JSON file
+			char filePath[256];
+			snprintf(filePath, sizeof(filePath), "%s/%s", destPath, destFile);
+			FILE* jsonFile = fopen(filePath, "r");
+			if (jsonFile == NULL) {
+				printf("Failed to open the JSON file: %s\n", filePath);
+				continue;
+			}
+
+			// Read the contents of the JSON file
+			fseek(jsonFile, 0, SEEK_END);
+			long fileSize = ftell(jsonFile);
+			fseek(jsonFile, 0, SEEK_SET);
+			char* jsonContent = malloc(fileSize + 1);
+			fread(jsonContent, 1, fileSize, jsonFile);
+			fclose(jsonFile);
+			jsonContent[fileSize] = '\0';
+
+			// Parse the JSON data
+			cJSON* root = cJSON_Parse(jsonContent);
+			free(jsonContent);
+			if (root == NULL) {
+				printf("Failed to parse the JSON data.\n");
+				continue;
+			}
+
+			// Access the "FWFS" object
+			cJSON* fwfsObject = cJSON_GetObjectItem(root, "FWFS");
+			if (fwfsObject == NULL) {
+				printf("Failed to access the \"FWFS\" object.\n");
+				cJSON_Delete(root);
+				continue;
+			}
+
+			// Access the "files" array
+			cJSON* filesArray = cJSON_GetObjectItem(fwfsObject, "files");
+			if (filesArray == NULL || !cJSON_IsArray(filesArray)) {
+				printf("Failed to access the \"files\" array.\n");
+				cJSON_Delete(root);
+				continue;
+			}
+
+			int filesArraySize = cJSON_GetArraySize(filesArray);
+			int i;
+			for (i = 0; i < filesArraySize; ++i) {
+				cJSON* fileItem = cJSON_GetArrayItem(filesArray, i);
+				if (fileItem != NULL && cJSON_IsString(fileItem) && strcmp(input, fileItem->valuestring) == 0) {
+					// Duplicate found
+					printf("Duplicate found: %s\n", input);
+					isDuplicate = 1;
+					break;
+				}
+			}
+
+			cJSON_Delete(root);
+		}
+	}
+
+	// Close the directory
+	closedir(dir);
+
+	return isDuplicate;
+}
+
+void updateJSON(const char* input, const char* destPath) {
+	DIR* dir;
+	struct dirent* entry;
+
+	// Open the destination directory
+	dir = opendir(destPath);
+	if (dir == NULL) {
+		printf("Failed to open the destination directory: %s\n", destPath);
+		return;
+	}
+
+	while ((entry = readdir(dir)) != NULL) {
+		const char* destFile = entry->d_name;
+
+		// Check if the destination file is a JSON file
+		if (strstr(destFile, ".json") != NULL) {
+			printf("Processing JSON file: %s\n", destFile);
+
+			// Open the JSON file
+			char filePath[256];
+			snprintf(filePath, sizeof(filePath), "%s/%s", destPath, destFile);
+			FILE* jsonFile = fopen(filePath, "r");
+			if (jsonFile == NULL) {
+				printf("Failed to open the JSON file: %s\n", filePath);
+				continue;
+			}
+
+			// Read the contents of the JSON file
+			fseek(jsonFile, 0, SEEK_END);
+			long fileSize = ftell(jsonFile);
+			fseek(jsonFile, 0, SEEK_SET);
+			char* jsonContent = malloc(fileSize + 1);
+			fread(jsonContent, 1, fileSize, jsonFile);
+			fclose(jsonFile);
+			jsonContent[fileSize] = '\0';
+
+			// Parse the JSON data
+			cJSON* root = cJSON_Parse(jsonContent);
+			free(jsonContent);
+			if (root == NULL) {
+				printf("Failed to parse the JSON data.\n");
+				continue;
+			}
+
+			// Access the "FWFS" object
+			cJSON* fwfsObject = cJSON_GetObjectItem(root, "FWFS");
+			if (fwfsObject == NULL) {
+				printf("Failed to access the \"FWFS\" object.\n");
+				cJSON_Delete(root);
+				continue;
+			}
+
+			// Access the "files" array
+			cJSON* filesArray = cJSON_GetObjectItem(fwfsObject, "files");
+			if (filesArray == NULL || !cJSON_IsArray(filesArray)) {
+				printf("Failed to access the \"files\" array.\n");
+				cJSON_Delete(root);
+				continue;
+			}
+
+			// Create a cJSON item for the input
+			cJSON* inputItem = cJSON_CreateString(input);
+			if (inputItem == NULL) {
+				printf("Failed to create cJSON item for the input.\n");
+				cJSON_Delete(root);
+				continue;
+			}
+
+			// Add the input item to the files array
+			cJSON_AddItemToArray(filesArray, inputItem);
+
+			// Convert the JSON data to a formatted string
+			char* updatedJsonString = cJSON_PrintBuffered(root, 4096, cJSON_True);
+
+			// Open the JSON file for writing
+			jsonFile = fopen(filePath, "w");
+			if (jsonFile == NULL) {
+				printf("Failed to open the JSON file for writing.\n");
+				cJSON_Delete(root);
+				continue;
+			}
+
+			// Write the updated JSON string to the file
+			fwrite(updatedJsonString, 1, strlen(updatedJsonString), jsonFile);
+
+			// Close the file
+			fclose(jsonFile);
+
+			// Clean up memory
+			free(updatedJsonString);
+			cJSON_Delete(root);
+		}
+	}
+
+	// Close the directory
+	closedir(dir);
 }
