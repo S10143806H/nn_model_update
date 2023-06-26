@@ -19,6 +19,7 @@ Jul
 #ifdef _WIN32
 #include <io.h>
 #include "dirent.h"	// https://codeyarns.com/tech/2014-06-06-how-to-use-dirent-h-with-visual-studio.html#gsc.tab=0
+#define F_OK 0
 #else // #elif __linux__
 #include <inttypes.h>
 #include <unistd.h>
@@ -31,6 +32,7 @@ Jul
 #define _open open
 #define _lseeki64 lseek64
 #define _lseek lseek
+#define _access access
 #define stricmp strcasecmp
 #endif
 
@@ -42,8 +44,9 @@ Jul
 #include <errno.h>
 #include "cJSON.h"
 #include <locale.h>
+#include <time.h>
 
-#define PRINT_DEBUG		0
+#define PRINT_DEBUG		1
 #define MAX_PATH_LENGTH 1024
 
 /* Declear function headers */
@@ -90,9 +93,13 @@ void updateJSON(const char* input);
 /* Function to update JSON */
 void writeJSON(const char* f_path);
 bool dupCheckJSON(const char* input);
-void dspFileProp(const char* f_name);
-void renameFile(const char* f_name, int f_type);
-void bkuModel(const char* input, const char* f_path);
+
+char* dspFileProp(const char* f_name);
+
+void renameFile(char* filename, int type);
+
+void backupModel(char* input, char* sktech_path);
+
 void rvtModel(const char* input);
 
 
@@ -113,6 +120,7 @@ const char* key_amb_default				= "DEFAULT";
 const char* key_amb_default_backup		= "Dbackup";
 const char* key_amb_customized_backup	= "Cbackup";
 const char* fname_txt					= "ino_validation.txt";
+char dir_example[100] = "NA";
 
 /* Declear common file paths */
 #ifdef _WIN32
@@ -142,6 +150,7 @@ char path_root[MAX_PATH_LENGTH];
 char path_arduino15[MAX_PATH_LENGTH];
 char path_pro2[MAX_PATH_LENGTH];
 char path_model[MAX_PATH_LENGTH];
+char dir_model[MAX_PATH_LENGTH];
 char path_txt[MAX_PATH_LENGTH];
 
 int main(int argc, char* argv[]) {
@@ -198,6 +207,8 @@ int main(int argc, char* argv[]) {
 	writeJSON(path_example);	//writeTXT(path_example);
 	return 0;
 }
+
+
 
 const char* input2filename(const char* directory_path, const char* key) {
 #if PRINT_DEBUG
@@ -744,6 +755,184 @@ void resetJSON(const char* input) {
 	closedir(dir);
 }
 
+char* convert_space_to_dash(const char* str) {
+	char* new_str = malloc(strlen(str) + 1);
+	int i = 0;
+	int j = 0;
+	while (str[i] != '\0') {
+		if (str[i] == ' ') {
+			new_str[j] = '-';
+		}
+		else {
+			new_str[j] = str[i];
+		}
+		i++;
+		j++;
+	}
+	new_str[j] = '\0';
+	return new_str;
+}
+
+char* dspFileProp(const char* filename) {
+	struct stat file_model_stats;
+	if (stat(filename, &file_model_stats) == -1) {
+		fprintf(stderr, "[Error] Default model %s does not exist. Please check %s again.\n", filename, filename);
+		exit(1);
+	}
+
+	char* file_model_date = ctime(&file_model_stats.st_mtime);
+	file_model_date[24] = '\0';
+	//return file_model_date;
+	return convert_space_to_dash(file_model_date);
+}
+
+void renameFile(char* filename, int type) {
+	char dest_path[100] = "";	// Replace with the desired destination path
+
+	if (type == 1) {			// Backup Dmodel
+		char filename_modified[200] = "";
+		char dsp_file_prop[100] = "";
+		
+		// original model filename
+		strcat(path_model, backspace);
+		strcat(path_model, filename);
+
+		// Construct the modified model filename
+		strcat(filename_modified, "Dbackup_");
+		strcat(filename_modified, dspFileProp(path_model));
+		strcat(filename_modified, "_");
+		strcat(filename_modified, filename);
+		printf("[%s] %s\n", __func__, filename_modified);
+
+		char source_path[300] = "";
+		strcat(source_path, dir_example);
+		strcat(source_path, backspace);
+		strcat(source_path, filename);
+		printf("[%s] source_path %s\n", __func__, source_path);
+
+		char destination_path[300] = "";
+		extractRootDirectory(path_model, dir_model);
+		strcat(destination_path, path_model);
+		strcat(destination_path, backspace);
+		strcat(destination_path, filename_modified);
+		printf("[%s] destination_path %s\n", __func__, destination_path);
+
+		//---------------------------------------------- TODO: copying file from 1 source path -> dest path
+		if (rename(source_path, destination_path) != 0) {
+			perror("Error occurred while renaming the file");
+			exit(1);
+		}
+		
+		printf("[%s][INFO] Dmodel Backup done.\n", __func__);
+		exit(1);
+	}
+	else {					// Backup Cmodel
+		char filename_modified[200] = "";
+		char dsp_file_prop[100] = ""; // Replace with the appropriate dspFileProp() implementation
+
+		// Construct the modified filename
+		strcat(filename_modified, "Cbackup_");
+		strcat(filename_modified, dsp_file_prop);
+		strcat(filename_modified, "_");
+		strcat(filename_modified, filename);
+
+		char source_path[300] = "";
+		strcat(source_path, dest_path);
+		strcat(source_path, filename);
+
+		char destination_path[300] = "";
+		strcat(destination_path, dest_path);
+		strcat(destination_path, filename_modified);
+
+
+		if (rename(source_path, destination_path) != 0) {
+			perror("Error occurred while renaming the file");
+			exit(1);
+		}
+
+		printf("[INFO] Cmodel Backup done.\n");
+	}
+}
+
+void backupModel(char* input, char* sktech_path) {
+	DIR* dir = opendir(path_model);
+	/* check whether default example has been back up */
+	if (dir) {
+		struct dirent* entry;
+		while ((entry = readdir(dir)) != NULL) {
+			if (strstr(entry->d_name, "Dbackup") != NULL) {		// customized model has been used
+				printf("[%s][INFO] Backup-ed %s found !!!\n", __func__, input);
+				break;
+			}
+		}
+		closedir(dir);
+	}
+
+	renameFile(input, 1);
+	
+	exit(1);
+	// Backup Cmodel: source sketch folder, dest viriant folder
+	char source_path[300] = "";
+	strcat(source_path, sktech_path);
+	strcat(source_path, backspace);
+	strcat(source_path, input);
+
+	char destination_path[300] = "";
+	strcat(destination_path, path_model);
+	strcat(destination_path, backspace);
+	strcat(destination_path, input);
+
+	printf("source_path '%s':\n", source_path);
+	printf("destination_path '%s':\n", destination_path);
+
+	FILE* source_file = fopen(source_path, "rb");
+	FILE* destination_file = fopen(destination_path, "wb");
+	if (source_file && destination_file) {
+		char buffer[4096];
+		size_t bytes_read;
+
+		while ((bytes_read = fread(buffer, 1, sizeof(buffer), source_file)) > 0) {
+			fwrite(buffer, 1, bytes_read, destination_file);
+		}
+
+		fclose(source_file);
+		fclose(destination_file);
+	}
+	else {
+		perror("Error occurred while copying the file");
+		exit(1);
+	}
+	
+	// renameFile(input, 0);
+
+    // Copy Cmodel
+    char destination_path_copy[300] = "";
+    strcat(destination_path_copy, destination_path);
+    strcat(destination_path_copy, backspace);
+    strcat(destination_path_copy, input);
+
+    FILE* source_cfile = fopen(source_path, "rb");
+    FILE* destination_cfile = fopen(destination_path_copy, "wb");
+
+    if (source_cfile && destination_cfile) {
+		char buffer[4096];
+        size_t bytes_read;
+		while ((bytes_read = fread(buffer, 1, sizeof(buffer), source_cfile)) > 0) {
+			fwrite(buffer, 1, bytes_read, destination_cfile);
+        }
+		fclose(source_cfile);
+		fclose(destination_cfile);
+    } 
+	else {
+            perror("Error occurred while copying the file");
+            exit(1);
+    }
+
+    printf("[INFO] Cmodel copied.\n");
+
+	exit(1);
+}
+
 void writeJSON(const char* f_path) {
 	DIR* dir;
 	struct dirent* ent;
@@ -765,7 +954,7 @@ void writeJSON(const char* f_path) {
 	char fname_fr[100] = "NA";
 	char line_strip_header[100] = "NA";
 	char line_strip_headerNN[100] = "NA";
-	char dir_example[100] = "NA";
+	
 
 	f_path = path_example;
 
@@ -895,6 +1084,7 @@ void writeJSON(const char* f_path) {
 										}
 									}
 									extractRootDirectory(path_example, dir_example);
+									strcpy(dir_example, path_example);
 
 									DIR* dir;
 									struct dirent* ent;
@@ -917,14 +1107,11 @@ void writeJSON(const char* f_path) {
 													if (strcmp(ent->d_name, fname_od) != 0) {	// exampel file name does not match in json
 														goto error_customized_mismatch;
 													}
-													else {		
-														// --if name not inside naming convension scrfd_500m_bnkps_640x640_u8.nb
-														// --check 
-														// --input2filename(ent->d_name);
-														// --goto [Error] Customized model scrfd_500m_bnkps_640x640_u8.nb not found. Please check your sketch folder again.
-														// else
-														// backupModel();
-														// ----
+													else {	
+#if PRINT_DEBUG
+														printf("[%s][Info] Found customized model %s\n", __func__, ent->d_name);
+#endif
+														backupModel(ent->d_name, dir_example);
 														// check when to revertModel()	
 													}
 													exit(1);
