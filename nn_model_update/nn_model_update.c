@@ -46,7 +46,7 @@ Jul
 #include <locale.h>
 #include <time.h>
 
-#define PRINT_DEBUG		1
+#define PRINT_DEBUG		0
 #define MAX_PATH_LENGTH 1024
 #define BUFFER_SIZE		4096
 
@@ -88,23 +88,20 @@ char* dspFileProp(const char* f_name);
 void renameFile(char* filename, int type);
 /* Backup files from source to destination dir, can be merged with renameFile */
 void backupModel(char* input, char* sktech_path);
+/* Revert Dmodel when user select Default model */
+void revertModel(const char* dmodel_name, const char* dmodel_name_backup, const char* dmodel_path);
 /* Copy files from source to destination dir, can be merged with renameFile */
 void copyFile(const char* sourcePath, const char* destinationPath);
 // -------------------------------------------------------------
 
-/* Convert model input type to model header f_model*/
-const char* input2header(const char* input);
+
 
 void resetJSON(const char* input);
 
+/* Update nn model json file*/
 void updateJSON(const char* input, const char* destPath);
 /* Function to update JSON */
 void writeJSON(const char* f_path);
-
-int dupCheckJSON(const char* input, const char* destPath);
-
-void revertModel(const char* input, const char* destPath, const char* keywordDefaultBackup);
-
 
 /* Declear global vairables */
 const char* key_amb_NN					= "modelSelect";
@@ -123,7 +120,7 @@ const char* key_amb_default				= "DEFAULT";
 const char* key_amb_default_backup		= "Dbackup";
 const char* key_amb_customized_backup	= "Cbackup";
 const char* fname_txt					= "ino_validation.txt";
-char dir_example[100] = "NA";
+const char* dir_example					= "NA";
 
 /* Declear common file paths */
 #ifdef _WIN32
@@ -189,6 +186,7 @@ int main(int argc, char* argv[]) {
 	strcpy(path_txt, argv[2]);
 	strcat(path_txt, path_txtfile_add);
 
+#if PRINT_DEBUG
 	// Print the input parameters 
 	printf("Parameter 1      = %s\n", path_build);
 	printf("Parameter 2      = %s\n", path_tools);
@@ -201,32 +199,16 @@ int main(int argc, char* argv[]) {
 	printf("ver_pro2         = %s\n", dirName(path_pro2));
 	printf("path_model       = %s\n", path_model);
 	printf("path_txt         = %s\n", path_txt);
+#endif
 
 	resetJSON(path_model);		//resetTXT(path_txt);
-	printf("[%s][INFO] resetJSON done\n", __func__);
+	//printf("[%s][INFO] resetJSON done\n", __func__);
 	path_build_options_json = pathTempJSON(path_build, ext_json, key_json);
 	path_example = validateINO(path_build);
-	printf("[%s][INFO] path_example            = %s\n", __func__, path_example);
+	//printf("[%s][INFO] path_example            = %s\n", __func__, path_example);
 	writeJSON(path_example);	//writeTXT(path_example);
+
 	return 0;
-
-	
-	const char* input = "input";
-	const char* destPath = "path/to/destination";
-	const char* keywordDefaultBackup = "keyword";
-
-	revertModel(input, destPath, keywordDefaultBackup);
-
-	int isDuplicate = dupCheckJSON(input, destPath);
-	if (isDuplicate) {
-		printf("Duplicate found.\n");
-	}
-	else {
-		printf("No duplicate found.\n");
-	}
-	
-	updateJSON(input, destPath);
-
 }
 
 const char* input2filename(const char* directory_path, const char* key) {
@@ -388,27 +370,6 @@ const char* input2model(const char* input) {
 	return "NA";
 }
 
-const char* input2header(const char* input) {
-	const char* header = NULL;
-
-	if (strcmp(input, "yolov3_tiny") == 0 ||
-		strcmp(input, "yolov4_tiny") == 0 ||
-		strcmp(input, "yolov7_tiny") == 0) {
-		header = "NNObjectDetection.h";
-	}
-	else if (strcmp(input, "mobilefacenet_i16") == 0 ||
-		strcmp(input, "scrfd640") == 0 ||
-		strcmp(input, "mobilefacenet_i8") == 0 ||
-		strcmp(input, "scrfd320p") == 0) {
-		header = "NNFaceDetectionRecognition.h";
-	}
-	else if (strcmp(input, "None") == 0) {
-		header = "NA";
-	}
-
-	return header;
-}
-
 int dirExists(const char* directory_path) {
 	DIR* directory = opendir(directory_path);
 	// check weather dir is valid
@@ -527,7 +488,6 @@ const char* pathTempJSON(const char* directory_path, const char* ext, const char
 }
 
 cJSON* loadJSONFile(const char* directory_path) {
-	printf("[%s] open the file %s \n", __func__, directory_path);
 	FILE* file = fopen(directory_path, "rb");
 	if (file == NULL) {
 		printf("[%s][Error] Failed to open the file.\n", __func__);
@@ -601,25 +561,10 @@ const char* validateINO(const char* directory_path) {
 	struct dirent* ent;
 
 	// Open the JSON file and retrive the data
-	cJSON* data = loadJSONFile(path_build_options_json);
-	
+	cJSON* data = loadJSONFile(path_build_options_json);	
 	// Arduino IDE1.0 
 	cJSON* path_example = cJSON_GetObjectItem(data, "sketchLocation");
-
-	/*
-	// Arduino IDE2.0
-	if (strstr(path_example, key_amb) == NULL) {
-		name_example = strrchr(path_example, '\\');
-		//removeChar(name_example, '\\');
-		//if (strstr(path_example, key_ino) == NULL && strstr(name_example, key_ino) == NULL) {
-			// rename json extracted example filename
-			//strcat(name_example, key_ino);
-			// find filepath in includes.cache
-		//}
-		//printf("[%s][INFO] name_example = %s\n", __func__, name_example);
-	}
-	*/
-#ifdef PRINT_DEBUG
+#if PRINT_DEBUG
 	printf("[%s][INFO] Current example path: %s \n", __func__, path_example->valuestring);
 #endif	
 
@@ -763,8 +708,6 @@ void resetJSON(const char* input) {
 			fwrite(new_file_contents, strlen(new_file_contents), 1, new_file);
 			fclose(new_file);
 			free(new_file_contents);
-
-			printf("[INFO] %s has been reset\n", entry->d_name);
 		}
 	}
 
@@ -821,7 +764,9 @@ void copyFile(const char* sourcePath, const char* destinationPath) {
 	fclose(sourceFile);
 	fclose(destinationFile);
 
+#if PRINT_DEBUG
 	printf("File copied successfully.\n");
+#endif
 }
 
 void renameFile(char* filename, int type) {
@@ -839,24 +784,23 @@ void renameFile(char* filename, int type) {
 		strcat(filename_modified, dspFileProp(path_model));
 		strcat(filename_modified, "_");
 		strcat(filename_modified, filename);
-		printf("[%s] %s\n", __func__, filename_modified);
 
 		extractRootDirectory(path_model, dir_model);
 		char source_path[300] = "";
 		strcat(source_path, path_model);
 		strcat(source_path, backspace);
 		strcat(source_path, filename);
-		printf("[%s] source_path %s\n", __func__, source_path);
 
 		char destination_path[300] = "";
 		strcat(destination_path, path_model);
 		strcat(destination_path, backspace);
         strcat(destination_path, filename_modified);
-		printf("[%s] destination_path %s\n", __func__, destination_path);
 
 		// copying file from source path -> dest path
 		copyFile(source_path, destination_path);
+#if PRINT_DEBUG
 		printf("[%s][INFO] Dmodel Backup done.\n", __func__);
+#endif
 	}
 	else {										// Backup Cmodel
 		char filename_modified[200] = "";
@@ -866,93 +810,72 @@ void renameFile(char* filename, int type) {
 		strcat(filename_modified, dspFileProp(path_model));
 		strcat(filename_modified, "_");
 		strcat(filename_modified, filename);
-		printf("[%s] %s\n", __func__, filename_modified);
 
 		char source_path[300] = "";
 		strcat(source_path, dir_example);
 		strcat(source_path, backspace);
 		strcat(source_path, filename);
-		printf("[%s] source_path %s\n", __func__, source_path);
 
 		char destination_path[300] = "";
 		//extractRootDirectory(path_model, dir_model);
 		strcat(destination_path, path_model);
 		strcat(destination_path, backspace);
 		strcat(destination_path, filename_modified);
-		printf("[%s] destination_path %s\n", __func__, destination_path);
-
-		// copying file from source path -> dest path
 		copyFile(source_path, destination_path);
+#if PRINT_DEBUG
 		printf("[%s][INFO] Cmodel Backup done.\n", __func__);
+#endif
+		char destination_path2[300] = "";
+		strcat(destination_path2, path_model);
+		strcat(destination_path2, backspace);
+		strcat(destination_path2, filename);
+		copyFile(source_path, destination_path2);
+#if PRINT_DEBUG
+		printf("[%s][INFO] Cmodel copy done.\n", __func__);
+#endif
 	}
 }
 
 void backupModel(char* input, char* sktech_path) {
 	DIR* dir = opendir(path_model);
+	bool flag_Dbackup = 0;
 	/* check whether default example has been back up */
 	if (dir) {
 		struct dirent* entry;
 		while ((entry = readdir(dir)) != NULL) {
 			if (strstr(entry->d_name, "Dbackup") != NULL) {		// customized model has been used
-				printf("[%s][INFO] Backup-ed %s found !!!\n", __func__, input);
+				//printf("[%s][INFO] Backup-ed %s found !!!\n", __func__, input);
+				flag_Dbackup = 1;
 				break;
 			}
 		}
 		closedir(dir);
 	}
-	renameFile(input, 1);
-	renameFile(input, 0);
+
+	if (flag_Dbackup) {
+		renameFile(input, 0);										// back up Cmodel
+	}
+	else {
+		renameFile(input, 1);										// back up Dmodel
+		renameFile(input, 0);										// back up Cmodel
+	}
 }
 
-void revertModel(const char* input, const char* destPath, const char* keywordDefaultBackup) {
-	DIR* dir;
-	struct dirent* entry;
+void revertModel(const char* dmodel_name, const char* dmodel_name_backup, const char* dmodel_path) {
+	char source_path[300] = "";
+	strcat(source_path, dmodel_path);
+	strcat(source_path, backspace);
+	strcat(source_path, dmodel_name_backup);
 
-	// Open the destination directory
-	dir = opendir(destPath);
-	if (dir == NULL) {
-		printf("Failed to open the destination directory: %s\n", destPath);
-		return;
-	}
+	char destination_path[300] = "";
+	strcat(destination_path, dmodel_path);
+	strcat(destination_path, backspace);
+	strcat(destination_path, dmodel_name);
 
-	while ((entry = readdir(dir)) != NULL) {
-		const char* destFile = entry->d_name;
-
-		// Check if the destination file matches the criteria
-		if (strstr(destFile, keywordDefaultBackup) != NULL && strstr(destFile, input) != NULL) {
-			printf("[INFO] Default backup model %s found.\n", destFile);
-
-			// Extract the file model name
-			char* fileModelReverted = strtok(destFile, "_");
-			fileModelReverted = strtok(NULL, "_");
-			fileModelReverted = strtok(NULL, "_");
-
-			// Remove the user model file
-			char userModelPath[256];
-			snprintf(userModelPath, sizeof(userModelPath), "%s/%s", destPath, fileModelReverted);
-			if (remove(userModelPath) == 0) {
-				printf("[INFO] User Model %s has been removed.\n", fileModelReverted);
-
-				// Revert the default backup
-				char destFilePath[256];
-				snprintf(destFilePath, sizeof(destFilePath), "%s/%s", destPath, destFile);
-				char revertFilePath[256];
-				snprintf(revertFilePath, sizeof(revertFilePath), "%s/%s", destPath, fileModelReverted);
-				if (rename(destFilePath, revertFilePath) == 0) {
-					printf("[INFO] Revert %s done.\n", input);
-				}
-				else {
-					printf("Failed to revert %s.\n", input);
-				}
-			}
-			else {
-				printf("Failed to remove the user model %s.\n", fileModelReverted);
-			}
-		}
-	}
-
-	// Close the directory
-	closedir(dir);
+	copyFile(source_path, destination_path);
+#if PRINT_DEBUG
+	printf("[%s][INFO] Dmodel Revert done.\n", __func__);
+#endif
 }
 
 void writeJSON(const char* f_path) {
@@ -1021,15 +944,15 @@ void writeJSON(const char* f_path) {
 			/* check whether keywordNN in f_model content */
 			if (strstr(line, key_amb_NN) != NULL && strstr(line, "//") == NULL && strstr(line, key_amb_bypassNN1) == NULL && strstr(line, key_amb_bypassNN2) == NULL) {
 				extractParam(line, param);
-				printf("Extracted parameter: %s\n", param);
+				//printf("Extracted parameter: %s\n", param);
 				char* token;
 				token = strtok(param, ", ");
 				if (token != NULL) {
 					strcpy(model_type, token);
-					printf("Model Type: %s\n", model_type);
+					//printf("Model Type: %s\n", model_type);
 					/* ------------------ object detection ------------------*/
 					token = strtok(NULL, ", ");
-					printf("1 token: %s\n", token);
+					// printf("1 token: %s\n", token);
 					if (token != NULL) {
 						// check model combination rules
 						if (strcmp(model_type, "OBJECT_DETECTION") == 0) {
@@ -1038,53 +961,123 @@ void writeJSON(const char* f_path) {
 							}
 							// check customized od model
 							if (strstr(token, key_amb_customized) != NULL) {
-#if PRINT_DEBUG
-								printf("od key_amb_customized\n");
-								printf("customized od: %s\n", input2model(token));
-#endif
+								printf("-----------------------------------------\n");
+								printf("  fd key_amb_customized\n");
+								printf("  customized fd: %s\n", input2model(token));
+								// goto path_model and open the file ends with .json
+								if (dirExists(path_model)) {
+									DIR* dir = opendir(path_model);
+									struct dirent* entry;
+
+									while ((entry = readdir(dir)) != NULL) {
+										if (endsWith(entry->d_name, ".json")) {
+											char fpath_nn_json[MAX_PATH_LENGTH];
+											char dir_nn_json[MAX_PATH_LENGTH];
+
+											sprintf(fpath_nn_json, "%s\\%s", path_model, entry->d_name);
+											cJSON* fname_model = input2filename(fpath_nn_json, input2model(token));
+											strcpy(fname_od, fname_model);
+										}
+									}
+									closedir(dir);
+								}
 								extractRootDirectory(path_example, dir_example);
-#if PRINT_DEBUG
-								printf("customized dir: %s\n", dir_example);
-#endif
+								dir_example = path_example;
+
 								DIR* dir;
 								struct dirent* ent;
 								int count = 0;
 
-								// check weather dir is valid
-								if ((dir = opendir(dir_example)) != NULL) {
+								/* check weather example directory is valid */
+								if ((dir = opendir(path_example)) != NULL) {
 									/* print all the files and directories within directory */
 									while ((ent = readdir(dir)) != NULL) {
-										if (ent->d_type == DT_REG) {
+										if (ent->d_type == DT_REG && strstr(ent->d_name, ".nb") != NULL) {
 											count++;
 										}
 										if (strstr(ent->d_name, ".nb") != NULL) {
-											if (strstr(ent->d_name, "yolo") != NULL) {
+											if (strstr(ent->d_name, "yolo") != NULL) {			// 1. check model file (.nb) within example directory 
 #if PRINT_DEBUG
-												printf("%s\n", ent->d_name);
+												printf("[%s] model fname %s\n", __func__, ent->d_name);
+												printf("[%s] json fname %s\n", __func__, fname_od);
 #endif
+												if (strcmp(ent->d_name, fname_od) != 0) {		// 2. check exampel file name whether matches in json
+													goto error_customized_mismatch;
+												}
+												else {
+#if PRINT_DEBUG
+													printf("[%s][Info] Found customized model %s\n", __func__, ent->d_name);
+#endif
+													backupModel(ent->d_name, dir_example);
+												}
 											}
 											else {
-												goto error_customized_mismatch;
+												goto error_customized_mismatch;					// 3. check model file (.nb) existance
 											}
 										}
 									}
 								}
-								if (count <= 1) {
+								printf("[%s] %d\n", __func__, count);
+								if (count < 1) {
 									goto error_customized_missing;
+								}
+							}
+							else {
+								DIR* dir = opendir(path_model);
+								bool flag_Dbackup = 0;
+								char fname_dmodel[100];
+								char fname_dmodel_backup[100];
+								
+								/* check whether default example has been back up */
+								if (dir) {
+									struct dirent* entry;
+									while ((entry = readdir(dir)) != NULL) {
+										if (strstr(entry->d_name, "Dbackup") != NULL) {				// customized model has been used
+											flag_Dbackup = 1;
+											strcpy(fname_dmodel_backup, entry->d_name);
+											strcpy(model_name_od, token);
+											
+											char* input = "";
+											input = input2model(model_name_od);
+											char output[100];
+											char* underscore = strchr(input, '_'); // Find the first occurrence of "_"
+											if (underscore != NULL) {
+												size_t length = underscore - input; // Calculate the length of the substring before "_"
+												strncpy(output, input, length); // Copy the substring before "_" to the output variable
+												output[length] = '\0'; // Add the null terminator at the end of the substring
+											}
+											char key[100] = "_";
+											strcat(key,output);
+											char* start = strstr(fname_dmodel_backup, key);		// Find the starting position of the substring
+											if (start != NULL) {
+												strcat(key, "_");
+												start += strlen(key);							// Move the pointer past the substring
+												strcat(output, "_");
+												strcpy(fname_dmodel, output);
+												strcat(fname_dmodel, start);
+											}
+										}
+									}
+									closedir(dir);
+								}
+
+								if (flag_Dbackup) {
+									revertModel(fname_dmodel, fname_dmodel_backup, path_model);
 								}
 							}
 						}
 						strcpy(model_name_od, token);
+
 						/* ----------------- face detection -----------------*/
 						token = strtok(NULL, ", ");
-						printf("2 token: %s\n", token);
+						// printf("2 token: %s\n", token);
 						if (token != NULL) {
 							// check model combination rules
 							if (strcmp(model_type, "FACE_DETECTION") == 0) {
 								if (strcmp(token, "NA_MODEL") == 0 || strstr(token, "SCRFD") == NULL) {
 									goto error_combination;
 								}
-								// check customized fd model
+								/* check customized fd model */
 								if (strstr(token, key_amb_customized) != NULL) {
 									printf("-----------------------------------------\n");
 									printf("  fd key_amb_customized\n");
@@ -1104,43 +1097,40 @@ void writeJSON(const char* f_path) {
 												strcpy(fname_od, fname_model);
 											}
 										}
+										closedir(dir);
 									}
 									extractRootDirectory(path_example, dir_example);
-									strcpy(dir_example, path_example);
+									dir_example = path_example;
 
 									DIR* dir;
 									struct dirent* ent;
 									int count = 0;
 
-									/* check weather example directory is valid */ 
+									/* check weather example directory is valid */
 									if ((dir = opendir(path_example)) != NULL) {
 										/* print all the files and directories within directory */
 										while ((ent = readdir(dir)) != NULL) {
-											if (ent->d_type == DT_REG) {
+											if (ent->d_type == DT_REG && strstr(ent->d_name, ".nb") != NULL) {
 												count++;
 											}
-											/* check model file (.nb) within example directory */
 											if (strstr(ent->d_name, ".nb") != NULL) {
-												if (strstr(ent->d_name, "scrfd") != NULL) {		// model naming convension check
+												if (strstr(ent->d_name, "scrfd") != NULL) {		// 1. check model file (.nb) within example directory 
 #if PRINT_DEBUG
 													printf("[%s] model fname %s\n", __func__, ent->d_name);
 													printf("[%s] json fname %s\n", __func__, fname_od);
 #endif
-													if (strcmp(ent->d_name, fname_od) != 0) {	// exampel file name does not match in json
+													if (strcmp(ent->d_name, fname_od) != 0) {	// 2. check exampel file name whether matches in json
 														goto error_customized_mismatch;
 													}
-													else {	
+													else {
 #if PRINT_DEBUG
 														printf("[%s][Info] Found customized model %s\n", __func__, ent->d_name);
 #endif
 														backupModel(ent->d_name, dir_example);
-														// check when to revertModel()
-														// if default_model but contains cmodel_xx.nb
 													}
-													exit(1);
 												}
 												else {
-													goto error_customized_mismatch;
+													goto error_customized_mismatch;				// 3. check model file (.nb) existance
 												}
 											}
 										}
@@ -1150,11 +1140,39 @@ void writeJSON(const char* f_path) {
 										goto error_customized_missing;
 									}
 								}
+								else {
+									DIR* dir = opendir(path_model);
+									bool flag_Dbackup = 0;
+									char fname_dmodel[100];
+									char fname_dmodel_backup[100];
+									/* check whether default example has been back up */
+									if (dir) {
+										struct dirent* entry;
+										while ((entry = readdir(dir)) != NULL) {
+											if (strstr(entry->d_name, "Dbackup") != NULL) {			// customized model has been used
+												flag_Dbackup = 1;
+												strcpy(fname_dmodel_backup, entry->d_name);
+												char* start = strstr(fname_dmodel_backup, "_scrfd");		// Find the starting position of the substring
+												if (start != NULL) {
+													start += strlen("_scrfd_");						// Move the pointer past the substring
+													strcpy(fname_dmodel, "scrfd_");
+													strcat(fname_dmodel, start);
+												}
+											}
+										}
+										closedir(dir);
+									}
+
+									if (flag_Dbackup) {
+										revertModel(fname_dmodel, fname_dmodel_backup, path_model);
+									}
+								}
 							}
 							strcpy(model_name_fd, token);
+
 							/*-------------- face recognition --------------*/
 							token = strtok(NULL, ", ");
-							printf("3 token: %s\n", token);
+							// printf("3 token: %s\n", token);
 							// check model combination rules
 							if (strcmp(model_type, "FACE_RECOGNITION") == 0) {
 								if (strcmp(model_name_fd, "NA_MODEL") == 0 || strstr(model_name_fd, "SCRFD") == NULL || strcmp(token, "NA_MODEL") == 0 || strstr(token, "MOBILEFACENET") == NULL) {
@@ -1162,36 +1180,92 @@ void writeJSON(const char* f_path) {
 								}
 								// check customized fr model
 								if (strstr(token, key_amb_customized) != NULL) {
-									printf("fr key_amb_customized\n");
-									printf("customized fr: %s\n", input2model(token));
+									printf("-----------------------------------------\n");
+									printf("	fr key_amb_customized\n");
+									printf("	customized fr: %s\n", input2model(token));
+									// goto path_model and open the file ends with .json
+									if (dirExists(path_model)) {
+										DIR* dir = opendir(path_model);
+										struct dirent* entry;
+
+										while ((entry = readdir(dir)) != NULL) {
+											if (endsWith(entry->d_name, ".json")) {
+												char fpath_nn_json[MAX_PATH_LENGTH];
+												char dir_nn_json[MAX_PATH_LENGTH];
+
+												sprintf(fpath_nn_json, "%s\\%s", path_model, entry->d_name);
+												cJSON* fname_model = input2filename(fpath_nn_json, input2model(token));
+												strcpy(fname_od, fname_model);
+											}
+										}
+										closedir(dir);
+									}
 									extractRootDirectory(path_example, dir_example);
-									printf("customized dir: %s\n", dir_example);
+									dir_example = path_example;
 
 									DIR* dir;
 									struct dirent* ent;
 									int count = 0;
 
-									// check weather dir is valid
-									if ((dir = opendir(dir_example)) != NULL) {
+									/* check weather example directory is valid */
+									if ((dir = opendir(path_example)) != NULL) {
 										/* print all the files and directories within directory */
 										while ((ent = readdir(dir)) != NULL) {
-											if (ent->d_type == DT_REG) {
+											if (ent->d_type == DT_REG && strstr(ent->d_name, ".nb") != NULL) {
 												count++;
 											}
 											if (strstr(ent->d_name, ".nb") != NULL) {
-												if (strstr(ent->d_name, "mobilefacenet") != NULL) {
+												if (strstr(ent->d_name, "mobilefacenet") != NULL) {		// 1. check model file (.nb) within example directory 
 #if PRINT_DEBUG
-													printf("%s\n", ent->d_name);
+													printf("[%s] model fname %s\n", __func__, ent->d_name);
+													printf("[%s] json fname %s\n", __func__, fname_od);
 #endif
+													if (strcmp(ent->d_name, fname_od) != 0) {			// 2. check exampel file name whether matches in json
+														goto error_customized_mismatch;
+													}
+													else {
+#if PRINT_DEBUG
+														printf("[%s][Info] Found customized model %s\n", __func__, ent->d_name);
+#endif
+														backupModel(ent->d_name, dir_example);
+													}
 												}
 												else {
-													goto error_customized_mismatch;
+													goto error_customized_mismatch;						// 3. check model file (.nb) existance
 												}
 											}
 										}
 									}
+									printf("[%s] %d\n", __func__, count);
 									if (count <= 1) {
 										goto error_customized_missing;
+									}
+								}
+								else {
+									DIR* dir = opendir(path_model);
+									bool flag_Dbackup = 0;
+									char fname_dmodel[100];
+									char fname_dmodel_backup[100];
+									/* check whether default example has been back up */
+									if (dir) {
+										struct dirent* entry;
+										while ((entry = readdir(dir)) != NULL) {
+											if (strstr(entry->d_name, "Dbackup") != NULL) {			// customized model has been used
+												flag_Dbackup = 1;
+												strcpy(fname_dmodel_backup, entry->d_name);
+												char* start = strstr(fname_dmodel_backup, "_mobilefacenet");		// Find the starting position of the substring
+												if (start != NULL) {
+													start += strlen("_mobilefacenet_");						// Move the pointer past the substring
+													strcpy(fname_dmodel, "mobilefacenet_");
+													strcat(fname_dmodel, start);
+												}
+											}
+										}
+										closedir(dir);
+									}
+
+									if (flag_Dbackup) {
+										revertModel(fname_dmodel, fname_dmodel_backup, path_model);
 									}
 								}
 							}
@@ -1205,19 +1279,16 @@ void writeJSON(const char* f_path) {
 					else {
 						/* provide default settings for all models if user never provide any selections*/
 						if (strcmp(model_type, "OBJECT_DETECTION") == 0 && strcmp(input2model(model_name_od), "NA") == 0) {
-							printf("111\n");
 							strcpy(model_name_od, "DEFAULT_YOLOV4TINY");
 							strcpy(model_name_fd, "NA_MODEL");
 							strcpy(model_name_fr, "NA_MODEL");
 						}
 						if (strcmp(model_type, "FACE_DETECTION") == 0 && strcmp(input2model(model_name_od), "NA") == 0) {
-							printf("222\n");
 							strcpy(model_name_od, "NA_MODEL");
 							strcpy(model_name_fd, "DEFAULT_SCRFD");
 							strcpy(model_name_fr, "NA_MODEL");
 						}
 						if (strcmp(model_type, "FACE_RECOGNITION") == 0 && strcmp(input2model(model_name_od), "NA") == 0) {
-							printf("333\n");
 							strcpy(model_name_od, "NA_MODEL");
 							strcpy(model_name_fd, "DEFAULT_SCRFD");
 							strcpy(model_name_fr, "DEFAULT_MOBILEFACENET");
@@ -1225,17 +1296,22 @@ void writeJSON(const char* f_path) {
 					}
 				}
 				fclose(f_model);
+#if PRINT_DEBUG
 				printf("-------------------------------------\n");
 				printf("Model Name OD: %s\n", input2model(model_name_od));
 				printf("Model Name FD: %s\n", input2model(model_name_fd));
 				printf("Model Name FR: %s\n", input2model(model_name_fr));
 				printf("-------------------------------------\n");
-				//updateTXT(input2model(model_name_od));
-				//updateTXT(input2model(model_name_fd));
-				//updateTXT(input2model(model_name_fr));
-
-				// ---------------------------------------
-				// default add in at least one model for NN examples
+#endif
+				if (strstr(input2model(model_name_od), "NA") == NULL) {
+					updateJSON(input2model(model_name_od), path_model);
+				}
+				if (strstr(input2model(model_name_fd), "NA") == NULL) {
+					updateJSON(input2model(model_name_fd), path_model);
+				}
+				if (strstr(input2model(model_name_fr), "NA") == NULL) {
+					updateJSON(input2model(model_name_fr), path_model);
+				}
 			}
 		}
 	}
@@ -1251,94 +1327,9 @@ error_customized_mismatch:
 	error_handler("Customized model mismatch. Please check your sketch folder again.");
 }
 
-int dupCheckJSON(const char* input, const char* destPath) {
-	DIR* dir;
-	struct dirent* entry;
-
-	// Open the destination directory
-	dir = opendir(destPath);
-	if (dir == NULL) {
-		printf("Failed to open the destination directory: %s\n", destPath);
-		return 0;
-	}
-
-	int isDuplicate = 0;
-
-	while ((entry = readdir(dir)) != NULL) {
-		const char* destFile = entry->d_name;
-
-		// Check if the destination file is a JSON file
-		if (strstr(destFile, ".json") != NULL) {
-			printf("Processing JSON file: %s\n", destFile);
-
-			// Open the JSON file
-			char filePath[256];
-			snprintf(filePath, sizeof(filePath), "%s/%s", destPath, destFile);
-			FILE* jsonFile = fopen(filePath, "r");
-			if (jsonFile == NULL) {
-				printf("Failed to open the JSON file: %s\n", filePath);
-				continue;
-			}
-
-			// Read the contents of the JSON file
-			fseek(jsonFile, 0, SEEK_END);
-			long fileSize = ftell(jsonFile);
-			fseek(jsonFile, 0, SEEK_SET);
-			char* jsonContent = malloc(fileSize + 1);
-			fread(jsonContent, 1, fileSize, jsonFile);
-			fclose(jsonFile);
-			jsonContent[fileSize] = '\0';
-
-			// Parse the JSON data
-			cJSON* root = cJSON_Parse(jsonContent);
-			free(jsonContent);
-			if (root == NULL) {
-				printf("Failed to parse the JSON data.\n");
-				continue;
-			}
-
-			// Access the "FWFS" object
-			cJSON* fwfsObject = cJSON_GetObjectItem(root, "FWFS");
-			if (fwfsObject == NULL) {
-				printf("Failed to access the \"FWFS\" object.\n");
-				cJSON_Delete(root);
-				continue;
-			}
-
-			// Access the "files" array
-			cJSON* filesArray = cJSON_GetObjectItem(fwfsObject, "files");
-			if (filesArray == NULL || !cJSON_IsArray(filesArray)) {
-				printf("Failed to access the \"files\" array.\n");
-				cJSON_Delete(root);
-				continue;
-			}
-
-			int filesArraySize = cJSON_GetArraySize(filesArray);
-			int i;
-			for (i = 0; i < filesArraySize; ++i) {
-				cJSON* fileItem = cJSON_GetArrayItem(filesArray, i);
-				if (fileItem != NULL && cJSON_IsString(fileItem) && strcmp(input, fileItem->valuestring) == 0) {
-					// Duplicate found
-					printf("Duplicate found: %s\n", input);
-					isDuplicate = 1;
-					break;
-				}
-			}
-
-			cJSON_Delete(root);
-		}
-	}
-
-	// Close the directory
-	closedir(dir);
-
-	return isDuplicate;
-}
-
 void updateJSON(const char* input, const char* destPath) {
 	DIR* dir;
 	struct dirent* entry;
-
 	// Open the destination directory
 	dir = opendir(destPath);
 	if (dir == NULL) {
@@ -1351,8 +1342,9 @@ void updateJSON(const char* input, const char* destPath) {
 
 		// Check if the destination file is a JSON file
 		if (strstr(destFile, ".json") != NULL) {
+#if PRINT_DEBUG
 			printf("Processing JSON file: %s\n", destFile);
-
+#endif
 			// Open the JSON file
 			char filePath[256];
 			snprintf(filePath, sizeof(filePath), "%s/%s", destPath, destFile);
@@ -1361,7 +1353,7 @@ void updateJSON(const char* input, const char* destPath) {
 				printf("Failed to open the JSON file: %s\n", filePath);
 				continue;
 			}
-
+			
 			// Read the contents of the JSON file
 			fseek(jsonFile, 0, SEEK_END);
 			long fileSize = ftell(jsonFile);
@@ -1370,7 +1362,7 @@ void updateJSON(const char* input, const char* destPath) {
 			fread(jsonContent, 1, fileSize, jsonFile);
 			fclose(jsonFile);
 			jsonContent[fileSize] = '\0';
-
+					
 			// Parse the JSON data
 			cJSON* root = cJSON_Parse(jsonContent);
 			free(jsonContent);
