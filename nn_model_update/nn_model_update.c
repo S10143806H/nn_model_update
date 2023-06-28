@@ -392,8 +392,12 @@ const char* dirName(const char* directory_path) {
 	// check dir validation
 	if (directory) {
 		while ((entry = readdir(directory)) != NULL) {
+#ifdef __APPLE__
+            if(strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0 || strcmp(entry->d_name, ".DS_Store") == 0) {
+#else
 			if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-				continue;
+#endif
+                continue;
 			}
 			else {
 				sdk_counter++;
@@ -402,8 +406,7 @@ const char* dirName(const char* directory_path) {
 		}
 		// non singular SDK validation
 		if (sdk_counter > 1) {
-			printf("[%s][Error] Current dirctory contains more than 1 SDK!!! \n", __func__);
-			exit(1);
+			goto error_non_singular;
 		}
 		else {
 			return sdk_name;
@@ -413,6 +416,9 @@ const char* dirName(const char* directory_path) {
 		printf("[%s][Error] Failed to open directory.\n", __func__);
 	}
 	closedir(directory);
+
+error_non_singular:
+	error_handler("AmebaPro2 directory only allow 1 SDK!!! Please check again.");
 }
 
 void resetTXT(const char* directory_path) {

@@ -12,6 +12,8 @@ ifeq ($(UNAME), Linux)
 else ifeq ($(UNAME), Darwin)
     # macOS-specific commands
     CC = gcc
+    AR = ar
+    RCS = rcs
     CFLAGS = -c
     LDFLAGS = -L. -lcjson -L/Library/Developer/CommandLineTools/usr/lib/swift_static/macosx/ -Bstatic
     OUTPUT = nn_model_update_macos
