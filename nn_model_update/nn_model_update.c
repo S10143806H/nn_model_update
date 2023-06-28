@@ -33,6 +33,7 @@ Jul
 #define _lseeki64 lseek64
 #define _lseek lseek
 #define _access access
+#define _strdup strdup
 #define stricmp strcasecmp
 #endif
 
