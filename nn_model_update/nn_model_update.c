@@ -102,7 +102,7 @@ void resetJSON(const char* input);
 /* Update nn model json file*/
 void updateJSON(const char* input, const char* destPath);
 /* Function to update JSON */
-void writeJSON(const char* f_path);
+int writeJSON(const char* f_path);
 
 /* Declear global vairables */
 const char* key_amb_NN					= "modelSelect";
@@ -885,7 +885,7 @@ void revertModel(const char* dmodel_name, const char* dmodel_name_backup, const 
 #endif
 }
 
-void writeJSON(const char* f_path) {
+int writeJSON(const char* f_path) {
 	DIR* dir;
 	struct dirent* ent;
 	const char buf[MAX_PATH_LENGTH] = "";
